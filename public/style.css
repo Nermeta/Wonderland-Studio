@@ -516,3 +516,6 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 .tpl-row input { flex: 1 1 8rem; min-width: 0; padding: .35rem .5rem; font-size: .85rem; }
 .tpl-row select { width: auto; padding: .35rem .5rem; font-size: .85rem; }
 .tpl-save .hint { display: block; padding: 0 .5rem .4rem; }
+
+.quit-chip { color: #ff8fa3; border-color: rgba(255,143,163,.45); }
+.quit-chip:hover { background: rgba(255,143,163,.14); }
