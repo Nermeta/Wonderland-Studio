@@ -2,16 +2,29 @@
 
 A local content editor for the **Wynter's Wonderland** Jekyll site. It edits the site's Markdown files in place and binds to `127.0.0.1` only.
 
-## Set up (any computer)
+## Set up on a new computer
 
-```bash
-git clone https://github.com/Nermeta/Wonderland-Studio && cd Wonderland-Studio
-npm install
-npm run setup      # clones the website into ./site (ignored by this repo's git)
-npm start          # http://localhost:4747
+**Windows:** the Studio runs inside WSL (Ubuntu). Once, in **Windows PowerShell**:
+
+```powershell
+wsl --install -d Ubuntu     # then restart if it asks, and finish Ubuntu's first-run username/password
 ```
 
-`./site` is a normal checkout of the website with its own git history, so the Studio never commits it. To use an existing clone instead, copy `config.example.json` to `config.json` and set `"repo"`, or run with `JEKYLL_REPO=/path/to/site`.
+Then open **Ubuntu** and run:
+
+```bash
+git clone -b tags-and-setup https://github.com/Nermeta/Wonderland-Studio ~/Wonderland-Studio
+cd ~/Wonderland-Studio
+bash install.sh             # add --with-preview to also install Ruby for the Preview button
+```
+
+`install.sh` is safe to run again. It installs git/curl if missing, installs Node through nvm if Node is missing or older than 18, runs `npm install`, clones the website into `./site`, checks everything with `npm run doctor`, and makes the desktop icon. Then double-click the icon. Keep the Studio in your Linux home folder (not under `/mnt/c`).
+
+**Linux / macOS:** the same `git clone` and `bash install.sh`.
+
+**Check a computer at any time:** `npm run doctor` lists what is ready and, for anything missing, the exact command to fix it (Node 18+, git and your git name/email, packages, the website folder, GitHub reachable, GitHub sign-in for pushing, Ruby for Preview, the desktop icon). `npm run doctor -- --fix` also installs packages and fetches the site. Pushing needs a GitHub sign-in the first time: `sudo apt install gh`, then `gh auth login` and `gh auth setup-git`.
+
+By hand instead: `npm install`, `npm run setup` (clones the website into `./site`, ignored by this repo's git), `npm start` (http://localhost:4747). To use an existing clone of the site, copy `config.example.json` to `config.json` and set `"repo"`, or run with `JEKYLL_REPO=/path/to/site`.
 
 Push your site branches before switching computers. Anything not pushed lives only in that computer's `./site`.
 
