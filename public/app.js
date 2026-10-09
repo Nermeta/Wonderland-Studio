@@ -101,7 +101,7 @@
       li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
       menu.appendChild(li);
     }
-    head.addEventListener('click', e => { e.stopPropagation(); menu.hidden = !menu.hidden; head.setAttribute('aria-expanded', String(!menu.hidden)); });
+    head.addEventListener('click', e => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) { const r = head.getBoundingClientRect(); menu.style.top = r.bottom + 2 + 'px'; menu.style.left = Math.max(8, Math.min(r.left, innerWidth - 220)) + 'px'; } head.setAttribute('aria-expanded', String(!menu.hidden)); });
     wrap.append(head, menu);
     nav.appendChild(wrap);
     const tb = el('button', 'tab' + (state.view === 'tags' ? ' active' : ''), 'Tags');

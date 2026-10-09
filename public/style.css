@@ -541,3 +541,6 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 .lp-item:hover, .lp-item:focus { background: rgba(0,229,204,.12); outline: none; }
 .lp-item code { color: var(--muted); font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
 .lp-note { margin: 0; }
+
+/* fixed so the scrolling tab strip cannot clip the menu */
+.tab-menu .menu { position: fixed; }
