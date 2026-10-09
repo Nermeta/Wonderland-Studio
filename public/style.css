@@ -456,7 +456,6 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 .tab { white-space: nowrap; padding: .55rem .6rem; }
 .brand { flex: none; }
 @media (max-width: 1280px) { .tagline { display: none; } .masthead h1 { font-size: 1.45rem; } }
-@media (max-width: 1200px) { .masthead { flex-wrap: wrap; } .tabs { order: 3; width: 100%; margin-right: 0; } .brand { margin-right: auto; } }
 
 /* Settings */
 .st-group { padding: 1.1rem 0; border-top: 1px solid var(--line); }
@@ -484,7 +483,6 @@ a.btn-mini { text-decoration: none; display: inline-block; }
   .brand { margin-right: 0; }
   .tabs { margin-right: auto; }
 }
-@media (max-width: 1200px) { .masthead { flex-wrap: wrap; } .tabs { order: 3; width: 100%; margin-right: 0; } .brand { margin-right: auto; } }
 
 /* Content dropdown */
 .tab-menu { position: relative; }
@@ -519,3 +517,17 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 
 .quit-chip { color: #ff8fa3; border-color: rgba(255,143,163,.45); }
 .quit-chip:hover { background: rgba(255,143,163,.14); }
+
+/* One line down to narrow windows: shrink the title and chips, let the tabs scroll */
+.masthead { align-items: center; }
+.tabs { overflow-x: auto; scrollbar-width: none; }
+.header-actions { padding-bottom: 0; }
+@media (max-width: 1250px) {
+  .masthead h1 { font-size: 1.2rem; white-space: nowrap; }
+  .masthead { padding: .8rem 1rem .4rem; gap: .6rem; }
+  #git-branch { max-width: 8rem; }
+  .header-actions .git-chip { padding-left: .55rem; padding-right: .55rem; }
+}
+@media (max-width: 1000px) {
+  .quit-chip span:not(.git-glyph), #site-chip > span:nth-child(2) { display: none; }
+}
