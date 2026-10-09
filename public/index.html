@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wonderland Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600&family=Raleway:wght@300;400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand">
+      <h1>Wonderland Studio</h1>
+      <p class="tagline">The curator's workroom, behind the display case</p>
+    </div>
+    <nav id="tabs" class="tabs" aria-label="Collections"></nav>
+    <button id="git-chip" class="git-chip" type="button" hidden title="Branch and commit">
+      <span class="git-glyph">⎇</span><span id="git-branch"></span><span id="git-count" class="git-count"></span>
+    </button>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <main class="workroom">
+    <!-- LEFT: the cabinet -->
+    <aside class="cabinet">
+      <div class="cabinet-head">
+        <h2 id="cab-title">The Cabinet</h2>
+        <button id="btn-new" class="btn btn-primary" type="button">+ New</button>
+      </div>
+      <input id="search" class="search" type="search" placeholder="Search this drawer…" aria-label="Search">
+      <div id="filters" class="filters"></div>
+      <ul id="item-list" class="item-list"></ul>
+    </aside>
+
+    <!-- RIGHT: the bench -->
+    <section class="bench">
+      <form id="form" autocomplete="off" novalidate>
+        <div class="bench-head">
+          <h2 id="form-title">New entry</h2>
+          <span id="dirty" class="dirty" hidden>● unsaved</span>
+          <code id="file-name" class="file-name"></code>
+        </div>
+
+        <div id="kindbar" class="kindbar" hidden></div>
+        <div id="warnings" class="notice warn" hidden></div>
+
+        <div class="panes" id="pane-tabs" role="tablist">
+          <button type="button" class="pane-tab on" data-pane="edit">Edit</button>
+          <button type="button" class="pane-tab" data-pane="preview" id="tab-preview">Preview</button>
+          <span class="layout-note" id="layout-note"></span>
+        </div>
+
+        <div id="pane-edit">
+          <div id="layout" class="layout"></div>
+          <div id="body-wrap" class="field body-field">
+            <span id="body-label">Body <em>(Markdown)</em></span>
+            <textarea id="f-body" rows="14" spellcheck="true" placeholder="Write in Markdown…"></textarea>
+          </div>
+          <div id="other" class="other" hidden></div>
+        </div>
+
+        <div id="pane-preview" hidden>
+          <p class="small muted">An approximation of the site layout using this entry's front matter. Run a real Jekyll build for pixel-accurate output.</p>
+          <iframe id="preview-frame" class="preview-frame" sandbox="" title="Preview"></iframe>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="btn-delete" class="btn btn-danger" hidden>Off with its head</button>
+          <span class="spacer"></span>
+          <button type="button" id="btn-revert" class="btn">Revert</button>
+          <button type="submit" id="btn-save" class="btn btn-primary">Save to repo</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <dialog id="confirm">
+    <h3>Off with its head?</h3>
+    <p id="confirm-text"></p>
+    <p class="small">It's moved to <code>.studio-trash/</code> in the repo, so it can be recovered.</p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button class="btn" id="confirm-no" type="button">Keep it</button>
+      <button class="btn btn-danger" id="confirm-yes" type="button">Remove</button>
+    </div>
+  </dialog>
+
+  <dialog id="git-dialog" class="wide">
+    <h3>Branch &amp; commit</h3>
+    <p id="git-warn" class="notice warn" hidden></p>
+    <div class="git-row">
+      <label class="field grow"><span>Branch</span>
+        <select id="git-branches"></select>
+      </label>
+      <button class="btn" id="git-switch" type="button">Switch</button>
+    </div>
+    <div class="git-row">
+      <label class="field grow"><span>New branch</span>
+        <input id="git-newbranch" type="text" placeholder="studio/2026-10-09">
+      </label>
+      <button class="btn" id="git-create" type="button">Create &amp; switch</button>
+    </div>
+    <div class="field">
+      <span>Changed files <button type="button" class="linkish" id="git-all">all</button> · <button type="button" class="linkish" id="git-none">none</button></span>
+      <ul id="git-files" class="git-files"></ul>
+    </div>
+    <label class="field"><span>Commit message <em id="git-msg-count"></em></span>
+      <input id="git-msg" type="text" maxlength="100" placeholder="One short sentence">
+    </label>
+    <p class="small muted">Commits locally only. Pushing and opening the PR stay in your own terminal.</p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button class="btn" id="git-close" type="button">Close</button>
+      <button class="btn btn-primary" id="git-commit" type="button">Commit</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
