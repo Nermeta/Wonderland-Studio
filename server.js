@@ -694,6 +694,12 @@ app.post('/api/settings/test-key', wrap(async (req, res) => {
   res.json({ ok: true, models: (j.data || []).map(m => m.id) });
 }));
 
+// ---------- quit (so the desktop shortcut's window can be closed from the browser) ----------
+app.post('/api/quit', (req, res) => {
+  res.json({ ok: true });
+  setTimeout(() => process.exit(0), 250);
+});
+
 // ---------- local site preview (Jekyll) ----------
 const Site = require('./lib/site');
 app.get('/api/site', (req, res) => res.json(Site.status()));

@@ -30,6 +30,12 @@ for (const bad of [{ workerUrl: 'http://x.dev' }, { workerUrl: "https://x.dev/'"
   assert.throws(() => SC.write(tmp, bad), /./, 'rejects ' + JSON.stringify(bad));
 }
 
+// desktop shortcut script: quoting survives spaces and apostrophes
+const { powershellScript } = require('../scripts/make-shortcut');
+const ps = powershellScript({ distro: 'Ubuntu-22.04', linuxPath: "/home/o'brien/My Studio" });
+assert.ok(ps.includes(`$s.Arguments = '-d "Ubuntu-22.04" --cd "/home/o''brien/My Studio" -e bash -lc "npm run launch"'`), 'arguments are quoted for wsl.exe and PowerShell');
+assert.ok(ps.includes("Join-Path (Join-Path $env:LOCALAPPDATA 'WonderlandStudio') 'studio.ico'") && ps.includes('$s.WindowStyle = 7'));
+
 const srv = app.listen(0, '127.0.0.1', async () => {
   const base = `http://127.0.0.1:${srv.address().port}`;
   const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, headers: { 'content-type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }); const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = t; } return { s: r.status, j }; };

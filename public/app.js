@@ -1332,6 +1332,13 @@
     add('Site source', i.siteRemote);
     add('Settings file', i.configFile);
     g4.appendChild(dl);
+    const quit = el('button', 'btn btn-danger', 'Quit the Studio'); quit.type = 'button';
+    quit.addEventListener('click', async () => {
+      if (isDirty() && !confirm('You have unsaved changes. Quit anyway?')) return;
+      try { await api('/api/quit', json('POST', {})); } catch { /* the server closes the connection as it exits */ }
+      document.body.innerHTML = '<main style="max-width:30rem;margin:20vh auto;text-align:center;font-family:Raleway,system-ui,sans-serif;color:#e8e4d8"><h1 style="font-family:serif;color:#b8914a">Studio stopped</h1><p>You can close this tab. Start it again from your desktop shortcut.</p></main>';
+    });
+    g4.appendChild(quit);
     g4.appendChild(el('p', 'small muted', 'The site folder and Studio port are set in config.json (or JEKYLL_REPO and PORT) and need a restart to change.'));
   }
 
