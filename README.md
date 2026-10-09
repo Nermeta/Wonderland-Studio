@@ -40,7 +40,7 @@ Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` 
 
 ## Covers and ISBN lookup
 
-The site's deploy workflow downloads covers from Open Library and caches them, so a fresh clone often has no `assets/images/covers/` files. The Studio therefore shows the local file when there is one and otherwise loads the cover straight from Open Library in your browser (the ISBN is sent to openlibrary.org). **Look up ISBN** (Library form) searches Open Library with the title and author you typed. Pick a result to set the ISBN and fill in an empty author or page count. Both need internet access.
+The site's deploy workflow downloads covers from Open Library and caches them, so a fresh clone often has no `assets/images/covers/` files. The Studio therefore shows the local file when there is one and otherwise loads the cover straight from Open Library in your browser (the ISBN is sent to openlibrary.org). **Look up ISBN** (Library form) searches Open Library with the title and author you typed. Pick a result to set the ISBN and fill in any empty author, page count, genre and topic. Genre and topic only use values you already have (plus fiction/nonfiction, inferred from Open Library's subjects), so a genre you have never used is not added automatically. Both need internet access.
 
 ## It only changes what you change
 

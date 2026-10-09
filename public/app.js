@@ -292,17 +292,19 @@
     btn.addEventListener('click', async () => {
       const label = btn.textContent; btn.disabled = true; btn.textContent = 'Searching…';
       try {
-        const q = new URLSearchParams({ title: state.values.title || '', author: state.values.author || '' });
+        const q = new URLSearchParams({ title: state.values.title || '', author: state.values.author || '', genres: (state.meta.suggestions.genre || []).join('|'), topics: (state.meta.suggestions.topic || []).join('|') });
         const r = await api('/api/isbn?' + q);
         list.innerHTML = '';
         if (!r.results.length) { list.appendChild(el('span', 'hint', 'No match. Check the title and author spelling, or type the ISBN by hand.')); return; }
         for (const m of r.results) {
-          const b = el('button', 'sugg', `${esc(m.title)}<small>${esc([m.author, m.year, m.pages ? m.pages + ' pp' : '', m.isbn].filter(Boolean).join(' · '))}</small>`);
+          const b = el('button', 'sugg', `${esc(m.title)}<small>${esc([m.author, m.year, m.pages ? m.pages + ' pp' : '', m.isbn, (m.genre || []).join('/')].filter(Boolean).join(' · '))}</small>`);
           b.type = 'button';
           b.addEventListener('click', () => {
             state.values.isbn = m.isbn; input.value = m.isbn; afterChange('isbn');
-            fill('author', m.author); fill('pages', m.pages);
-            list.innerHTML = ''; toast('ISBN set. Empty author and pages were filled in too.');
+            fill('author', m.author); fill('pages', m.pages); fill('topic', m.topic);
+            const gw = document.querySelector('[data-key="genre"]');
+            if (gw && gw._add && !(state.values.genre || []).length) m.genre.forEach(g => gw._add(g));
+            list.innerHTML = ''; toast('ISBN set. Empty author, pages, genre and topic were filled in too.');
           });
           list.appendChild(b);
         }

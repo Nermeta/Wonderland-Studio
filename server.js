@@ -418,7 +418,7 @@ app.post('/api/tags/suggest', wrap(async (req, res) => {
 
 // ---------- ISBN lookup (Open Library) ----------
 app.get('/api/isbn', wrap(async (req, res) => {
-  res.json({ results: await require('./lib/isbn').lookupIsbn({ title: req.query.title, author: req.query.author }) });
+  res.json({ results: await require('./lib/isbn').lookupIsbn({ title: req.query.title, author: req.query.author, genres: String(req.query.genres || '').split('|').filter(Boolean), topics: String(req.query.topics || '').split('|').filter(Boolean) }) });
 }));
 
 // ---------- markdown preview ----------
