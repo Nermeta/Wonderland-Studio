@@ -28,7 +28,7 @@ const srv = http.createServer(app).listen(0, '127.0.0.1', async () => {
   for (const c of collections) {
     for (const it of (await j('GET', `/api/c/${c.id}`)).d.items) {
       const det = (await j('GET', `/api/c/${c.id}/${it.slug}`)).d;
-      const file = path.join(TMP, c.dir, it.slug + '.md');
+      const file = ['.md', '.markdown'].map(e => path.join(TMP, c.dir, it.slug + e)).find(fs.existsSync);
       const before = fs.readFileSync(file);
       const r = await j('PUT', `/api/c/${c.id}/${it.slug}`, { values: det.values, body: det.body, mtime: det.mtime });
       n++;

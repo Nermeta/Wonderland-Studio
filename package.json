@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "setup": "node scripts/setup.js",
-    "test": "node test/tags.js && node test/settings.js && node test/roundtrip.js"
+    "test": "node test/tags.js && node test/settings.js && node test/site.js && node test/roundtrip.js"
   },
   "license": "UNLICENSED",
   "private": true,

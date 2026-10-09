@@ -66,7 +66,7 @@
       else if (f.type === 'bool') v[f.key] = f.default != null ? f.default : false;
       else if (f.type === 'select') v[f.key] = f.options.includes('in-progress') ? 'in-progress' : f.options[0];
       else if (f.key === 'date' && state.cur !== 'emblems') v[f.key] = today();
-      else v[f.key] = '';
+      else v[f.key] = f.default != null ? String(f.default) : '';
     }
     return v;
   }
@@ -87,12 +87,23 @@
   function renderTabs() {
     const nav = $('#tabs');
     nav.innerHTML = '';
-    for (const c of state.schema.collections) {
-      const b = el('button', 'tab' + (state.view === 'edit' && c.id === state.cur ? ' active' : ''), esc(c.label));
-      b.type = 'button';
-      b.addEventListener('click', () => selectCollection(c.id));
-      nav.appendChild(b);
+    const cols = state.schema.collections;
+    const wrap = el('div', 'tab-menu');
+    const label = state.view === 'edit' && col() ? col().label : 'Content';
+    const head = el('button', 'tab' + (state.view === 'edit' ? ' active' : ''), `${esc(label)} <span class="caret">▾</span>`);
+    head.type = 'button'; head.setAttribute('aria-haspopup', 'true'); head.setAttribute('aria-expanded', 'false');
+    const menu = el('ul', 'menu'); menu.hidden = true; menu.setAttribute('role', 'menu');
+    for (const c of cols) {
+      const li = el('li', c.id === state.cur && state.view === 'edit' ? 'on' : '', `<span class="g">${esc(c.glyph || '')}</span>${esc(c.label)}`);
+      li.setAttribute('role', 'menuitem'); li.tabIndex = 0;
+      const go = () => { menu.hidden = true; head.setAttribute('aria-expanded', 'false'); selectCollection(c.id); };
+      li.addEventListener('click', go);
+      li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+      menu.appendChild(li);
     }
+    head.addEventListener('click', e => { e.stopPropagation(); menu.hidden = !menu.hidden; head.setAttribute('aria-expanded', String(!menu.hidden)); });
+    wrap.append(head, menu);
+    nav.appendChild(wrap);
     const tb = el('button', 'tab' + (state.view === 'tags' ? ' active' : ''), 'Tags');
     tb.type = 'button';
     tb.addEventListener('click', openTags);
@@ -102,6 +113,8 @@
     sb.addEventListener('click', openSettings);
     nav.appendChild(sb);
   }
+  document.addEventListener('click', () => { document.querySelectorAll('.tab-menu .menu').forEach(m => { m.hidden = true; }); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.tab-menu .menu').forEach(m => { m.hidden = true; }); });
 
   async function selectCollection(id) {
     if ((id !== state.cur || state.view !== 'edit') && !guard()) return;
@@ -669,8 +682,10 @@
     }
     lay.prepend(grid);
     if (isEmblemBadge()) { lay.appendChild(buildArt()); lay.appendChild(buildDisplayCase()); }
+    if (state.cur === 'pages') lay.appendChild(buildNavToggle());
 
-    $('#af-out').innerHTML = ''; $('#af-claude').hidden = !state.claude;
+    $('#af-out').innerHTML = ''; $('#af-claude').hidden = !state.claude; $('#af').hidden = state.cur === 'pages';
+    renderStartFrom();
 
     // body
     const hasBody = !(state.cur === 'emblems' && state.kind === 'education');
@@ -688,11 +703,12 @@
     }).join('') : '';
 
     // panes
-    const canPreview = state.cur !== 'emblems';
+    const canPreview = state.cur !== 'emblems' && state.cur !== 'pages';
     $('#tab-preview').hidden = !canPreview;
     const d = c.defaults || {};
     $('#layout-note').textContent = state.cur === 'emblems'
       ? 'no page · shown on the Emblems display case'
+      : state.cur === 'pages' ? 'a page of the site · listed in the navigation only if you tick it'
       : [d.layout ? `layout: ${d.layout}` : '', `public by default: ${d.public != null ? d.public : true}`].filter(Boolean).join(' · ');
     setPane('edit');
     refreshChrome();
@@ -805,6 +821,7 @@
         r = await api(`/api/c/${state.cur}`, json('POST', { kind: state.kind, values: state.values, body: state.body, slug: state.newSlug || undefined }));
       }
       const wasNew = !state.slug;
+      await syncNav(r.slug);
       await loadList();
       const d = await api(`/api/c/${state.cur}/${encodeURIComponent(r.slug)}`);
       setDoc({ slug: r.slug, kind: d.kind, values: fromServer(d.kind, d.values), body: d.body, other: d.other, warnings: d.warnings, mtime: d.mtime, file: d.file });
@@ -1027,6 +1044,111 @@
   document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#btn-focus').click(); } });
   try { if (localStorage.getItem(FOCUS_KEY) === '1') setFocus(true); } catch { /* ignore */ }
 
+
+  // ---------- start from an existing entry ----------
+  const SKIP_WHEN_COPYING = ['title', 'date', 'finished_date', 'permalink', 'isbn', 'badge_image', 'cert_url', 'summary'];
+  function renderStartFrom() {
+    const wrap = $('#start-wrap'), sel = $('#start-from');
+    wrap.hidden = !!state.slug || !state.items.length;
+    if (wrap.hidden) return;
+    sel.innerHTML = '<option value="">Blank</option>' + state.items.filter(i => !i.error)
+      .map(i => `<option value="${esc(i.slug)}">${esc(i.title || i.slug)}</option>`).join('');
+  }
+  async function startFrom(slug) {
+    if (!slug) return;
+    const hasWork = state.body.trim() || Object.entries(state.values).some(([k, v]) => !SKIP_WHEN_COPYING.includes(k) && (Array.isArray(v) ? v.length : String(v || '').trim()) && k !== 'layout');
+    if (hasWork && !confirm('Replace what you have typed so far with a copy of that entry?')) { $('#start-from').value = ''; return; }
+    try {
+      const d = await api(`/api/c/${state.cur}/${encodeURIComponent(slug)}`);
+      const from = fromServer(d.kind, d.values), vals = blankValues(d.kind);
+      for (const f of col().kinds[d.kind].fields) if (!f.hidden && !SKIP_WHEN_COPYING.includes(f.key) && f.key in from) vals[f.key] = from[f.key];
+      setDoc({ slug: null, kind: d.kind, values: vals, body: d.body, other: d.other });
+      autoSlug();
+      toast(`Started from “${d.values.title || slug}”. Give it a title and fill in the rest.`);
+    } catch (e) { toast(e.message, true); }
+  }
+  $('#start-from').addEventListener('change', e => startFrom(e.target.value));
+
+  // ---------- pages: navigation link ----------
+  function buildNavToggle() {
+    const w = el('div', 'field wide nav-toggle');
+    const lab = el('label', 'st-switch'); const cb = el('input'); cb.type = 'checkbox'; cb.disabled = true;
+    lab.append(cb, el('span', null, 'Show in the navigation bar'));
+    w.append(lab, el('small', 'hint', 'Adds or removes one link line in _includes/nav.html when you save. Without it, the page exists but nothing links to it.'));
+    const href = () => state.values.permalink || `/${state.slug || state.newSlug || ''}/`;
+    state.nav = { was: false, want: false, oldHref: state.slug ? href() : '' };
+    api('/api/nav').then(r => {
+      const hit = state.slug && r.links.some(l => l.href === state.nav.oldHref);
+      state.nav.was = state.nav.want = !!hit; cb.checked = !!hit; cb.disabled = false;
+    }).catch(() => { w.appendChild(el('small', 'hint', 'This site has no _includes/nav.html to edit.')); });
+    cb.addEventListener('change', () => { state.nav.want = cb.checked; });
+    return w;
+  }
+  async function syncNav(slug) {
+    const n = state.nav; if (state.cur !== 'pages' || !n) return;
+    const href = state.values.permalink || `/${slug}/`;
+    if (n.was && (!n.want || n.oldHref !== href)) await api('/api/nav', json('PUT', { href: n.oldHref, show: false }));
+    if (n.want && (!n.was || n.oldHref !== href)) await api('/api/nav', json('PUT', { href, label: state.values.title, show: true }));
+  }
+
+  // ---------- Markdown templates ----------
+  (function templatesMenu() {
+    const bar = $('#md-bar'), host = $('#body-wrap'); host.style.position = 'relative';
+    const btn = el('button', 'md-btn md-tpl', 'Templates ▾'); btn.type = 'button'; btn.title = 'Insert a Markdown skeleton, or save this body as a template';
+    btn.addEventListener('mousedown', e => e.preventDefault());
+    const menu = el('div', 'dd tpl-menu'); menu.hidden = true; host.appendChild(menu);
+    bar.appendChild(btn);
+
+    const ta = $('#f-body');
+    function insert(t) {
+      const text = t.body.replace(/\s+$/, '') + '\n';
+      if (!ta.value.trim()) { replaceRange(0, ta.value.length, text, 0, 0); return; }
+      const s = ta.selectionStart, before = ta.value.slice(0, s);
+      const lead = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : '';
+      replaceRange(s, ta.selectionEnd, lead + text, s + lead.length, s + lead.length + text.length);
+    }
+    async function open() {
+      menu.innerHTML = ''; menu.hidden = false;
+      menu.style.top = (btn.offsetTop + btn.offsetHeight + 4) + 'px'; menu.style.left = 'auto'; menu.style.right = Math.max(0, host.clientWidth - (btn.offsetLeft + btn.offsetWidth)) + 'px'; menu.style.minWidth = '19rem'; menu.style.maxWidth = 'min(26rem, 96vw)';
+      let data;
+      try { data = await api('/api/templates?coll=' + encodeURIComponent(state.cur)); } catch (e) { menu.appendChild(el('p', 'hint', esc(e.message))); return; }
+      const section = (title, list, deletable) => {
+        if (!list.length) return;
+        menu.appendChild(el('div', 'tpl-head', esc(title)));
+        for (const t of list) {
+          const row = el('div', 'tpl-item'); const b = el('button', null, esc(t.name)); b.type = 'button';
+          b.addEventListener('click', () => { menu.hidden = true; insert(t); });
+          row.appendChild(b);
+          if (deletable) {
+            const x = el('button', 'tpl-x', '×'); x.type = 'button'; x.title = 'Delete this template'; x.setAttribute('aria-label', 'Delete ' + t.name);
+            x.addEventListener('click', async e => { e.stopPropagation(); try { await api('/api/templates/' + encodeURIComponent(t.id), { method: 'DELETE' }); toast('Template deleted.'); open(); } catch (er) { toast(er.message, true); } });
+            row.appendChild(x);
+          }
+          menu.appendChild(row);
+        }
+      };
+      section('Yours', data.user, true);
+      section('Built in', data.builtin, false);
+      const save = el('div', 'tpl-save');
+      save.innerHTML = '<div class="tpl-head">Save this body as a template</div>';
+      const name = el('input'); name.type = 'text'; name.placeholder = 'Template name'; name.maxLength = 60;
+      const scope = el('select'); scope.innerHTML = `<option value="${esc(state.cur)}">${esc(col().label)} only</option><option value="*">Every collection</option>`;
+      const go = el('button', 'btn-mini', 'Save'); go.type = 'button';
+      go.addEventListener('click', async () => {
+        if (!state.body.trim()) return toast('Write something in the body first.', true);
+        try { await api('/api/templates', json('POST', { name: name.value, coll: scope.value, body: state.body })); toast('Template saved.'); open(); }
+        catch (e) { toast(e.message, true); }
+      });
+      const row = el('div', 'tpl-row'); row.append(name, scope, go);
+      save.appendChild(row);
+      save.appendChild(el('small', 'hint', 'Templates are kept in templates.json in the Studio folder. They fill an empty body, or insert at the cursor.'));
+      menu.appendChild(save);
+    }
+    btn.addEventListener('click', e => { e.stopPropagation(); if (menu.hidden) open(); else menu.hidden = true; });
+    document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.hidden = true; });
+  })();
+
   // ---------- auto-fill empty fields ----------
   function applyValue(key, val) {
     const w = document.querySelector(`[data-key="${key}"]`);
@@ -1180,6 +1302,49 @@
     const ptsv = el('button', 'btn', 'Save'); ptsv.type = 'button'; ptsv.addEventListener('click', () => save({ previewPort: port.value }, 'Preview port saved.'));
     ptb.appendChild(ptsv);
     row(g3, 'Preview port', ptb, 'Where “Preview” serves the site. Applies the next time you start it.');
+
+
+    // Website (writes to the site's own files)
+    const g5 = group('Website', 'These edit files inside your site folder (_config.yml and assets/js/chat.js). They show up as changed files in the git panel, so commit and push them like any other edit.');
+    const wsBox = el('div'); g5.appendChild(wsBox);
+    wsBox.appendChild(el('p', 'hint', 'Loading…'));
+    api('/api/site-config').then(cfg => {
+      wsBox.innerHTML = '';
+      const fields = [
+        ['title', 'Site title', 'text', 'Shown in the browser tab and the header.'],
+        ['description', 'Description', 'area', 'The short line search engines and link previews use.'],
+        ['url', 'Site address', 'text', 'The public address, such as https://nermeta.github.io.'],
+        ['email', 'Contact email', 'text', ''],
+        ['github_username', 'GitHub username', 'text', ''],
+        ['workerUrl', 'Chat worker address', 'text', 'The Cloudflare Worker behind the AI chat (set in assets/js/chat.js). Only change this if you redeploy the worker somewhere new.']
+      ];
+      const inputs = {};
+      for (const [key, label, kind, help] of fields) {
+        const i = kind === 'area' ? el('textarea') : input('text', cfg[key]);
+        if (kind === 'area') { i.rows = 3; i.value = cfg[key] || ''; }
+        i.autocomplete = 'off'; inputs[key] = i;
+        const c = el('div', 'st-inline'); c.appendChild(i);
+        if (key === 'workerUrl') {
+          const t = el('button', 'btn', 'Test'); t.type = 'button';
+          t.addEventListener('click', async () => {
+            t.disabled = true; t.textContent = 'Testing…';
+            try { const r = await api('/api/site-config/test-worker', json('POST', { workerUrl: i.value.trim() })); toast(`Reachable (HTTP ${r.status}).`); }
+            catch (e) { toast(e.message, true); } finally { t.disabled = false; t.textContent = 'Test'; }
+          });
+          c.appendChild(t);
+        }
+        row(wsBox, label, c, help);
+      }
+      const saveWs = el('button', 'btn btn-primary', 'Save website settings'); saveWs.type = 'button';
+      saveWs.addEventListener('click', async () => {
+        const patch = {}; for (const k of Object.keys(inputs)) if (inputs[k].value.trim() !== String(cfg[k] || '')) patch[k] = inputs[k].value.trim();
+        if (!Object.keys(patch).length) return toast('Nothing changed.');
+        try { const r = await api('/api/site-config', json('PUT', patch)); toast(`Changed ${r.changed.join(' and ')}. Commit it from the git panel.`); await refreshGit(); renderSettings(); }
+        catch (e) { toast(e.message, true); }
+      });
+      const bar = el('div', 'st-inline'); bar.appendChild(saveWs); wsBox.appendChild(bar);
+      if (!cfg.found.config) wsBox.prepend(el('p', 'hint', 'No _config.yml found in the site folder.'));
+    }).catch(e => { wsBox.innerHTML = ''; wsBox.appendChild(el('p', 'hint', esc(e.message))); });
 
     // About
     const g4 = group('About this install');

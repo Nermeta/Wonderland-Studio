@@ -18,6 +18,9 @@ const { execFile } = require('child_process');
 const FM = require('./lib/frontmatter');
 const { COLLECTIONS } = require('./lib/schemas');
 const Tags = require('./lib/tags');
+const Nav = require('./lib/nav');
+const SiteConfig = require('./lib/siteconfig');
+const Templates = require('./lib/templates').make(process.env.STUDIO_TEMPLATES ? path.resolve(process.env.STUDIO_TEMPLATES) : path.join(__dirname, 'templates.json'));
 
 // ---------- config ----------
 const CONFIG_FILE = process.env.STUDIO_CONFIG ? path.resolve(process.env.STUDIO_CONFIG) : path.join(__dirname, 'config.json');
@@ -296,7 +299,7 @@ app.get('/api/schema', (req, res) => {
     repo: REPO,
     repoExists: repoExists(),
     collections: COLLECTIONS.map(c => ({
-      id: c.id, label: c.label, singular: c.singular, glyph: c.glyph, dir: c.dir, datePrefix: !!c.datePrefix,
+      id: c.id, label: c.label, singular: c.singular, glyph: c.glyph, dir: c.dir, datePrefix: !!c.datePrefix, noPublic: !!c.noPublic,
       dirExists: fs.existsSync(colDir(c)),
       defaults: configDefaults(c),
       kinds: Object.fromEntries(Object.entries(c.kinds).map(([k, v]) => [k, { label: v.label, fields: v.fields }]))
@@ -321,6 +324,11 @@ app.get('/api/c/:coll', wrap(async (req, res) => {
       }
       suggestions[fd.key] = [...set].sort((a, b) => a.localeCompare(b));
     }
+  }
+  if (c.id === 'pages') {
+    const ld = path.join(REPO, '_layouts');
+    const names = fs.existsSync(ld) ? fs.readdirSync(ld).filter(f => f.endsWith('.html')).map(f => f.replace(/\.html$/, '')) : [];
+    suggestions.layout = [...new Set([...(suggestions.layout || []), ...names])].sort((a, b) => a.localeCompare(b));
   }
   const skills = c.id === 'chronicles' ? items.filter(i => i.kind === 'skill').map(i => i.slug).sort() : [];
   if (c.id === 'chronicles') { suggestions.requires = skills; }
@@ -423,9 +431,53 @@ app.delete('/api/c/:coll/:slug', wrap(async (req, res) => {
   const c = colOr404(req);
   const file = findFile(c, req.params.slug);
   if (!file) throw httpErr(404, 'Not found.');
+  let navRemoved = false;
+  if (c.id === 'pages') { // a deleted page must not leave a dead link in the navigation
+    try { const d = readDoc(c, req.params.slug).data; navRemoved = Nav.remove(REPO, d.permalink || `/${req.params.slug}/`); } catch { /* unreadable page: leave nav alone */ }
+  }
   fs.mkdirSync(TRASH_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   fs.renameSync(file, path.join(TRASH_DIR, `${stamp}__${c.dir.replace(/^_/, '')}__${path.basename(file)}`));
+  res.json({ ok: true, navRemoved });
+}));
+
+// ---------- navigation ----------
+app.get('/api/nav', wrap(async (req, res) => { needRepo(); res.json({ links: Nav.links(REPO) }); }));
+app.put('/api/nav', wrap(async (req, res) => {
+  needRepo();
+  const href = String((req.body || {}).href || ''), label = String((req.body || {}).label || '').trim();
+  if (!Nav.HREF_OK.test(href)) throw httpErr(400, 'That address cannot be used in the navigation.');
+  let changed;
+  if (req.body.show) { if (!label) throw httpErr(400, 'Give the page a title first.'); changed = Nav.add(REPO, href, label); }
+  else changed = Nav.remove(REPO, href);
+  res.json({ changed, links: Nav.links(REPO) });
+}));
+
+// ---------- site-wide values (title, URLs, chat worker) ----------
+app.get('/api/site-config', wrap(async (req, res) => { needRepo(); res.json(SiteConfig.read(REPO)); }));
+app.put('/api/site-config', wrap(async (req, res) => {
+  needRepo();
+  const b = req.body || {};
+  const changed = SiteConfig.write(REPO, { title: b.title, email: b.email, description: b.description, url: b.url, github_username: b.github_username, workerUrl: b.workerUrl });
+  res.json({ changed, config: SiteConfig.read(REPO) });
+}));
+// Is the chat worker reachable? A bare request: any HTTP answer (even 404/405) means the address resolves.
+app.post('/api/site-config/test-worker', wrap(async (req, res) => {
+  const v = SiteConfig.validate({ workerUrl: (req.body || {}).workerUrl });
+  let r;
+  try { r = await fetch(v.workerUrl, { method: 'OPTIONS', signal: AbortSignal.timeout(10000) }); }
+  catch (e) { throw httpErr(502, `Could not reach ${v.workerUrl}: ${e.cause && e.cause.code ? e.cause.code : e.message}`); }
+  res.json({ status: r.status, ok: r.status < 500 });
+}));
+
+// ---------- markdown templates ----------
+app.get('/api/templates', (req, res) => res.json(Templates.list(String(req.query.coll || ''))));
+app.post('/api/templates', wrap(async (req, res) => {
+  const b = req.body || {};
+  res.json({ template: Templates.add({ name: b.name, coll: b.coll, body: b.body }, COLLECTIONS.map(c => c.id)) });
+}));
+app.delete('/api/templates/:id', wrap(async (req, res) => {
+  if (!/^u-[a-z0-9]+$/.test(req.params.id) || !Templates.remove(req.params.id)) throw httpErr(404, 'Template not found.');
   res.json({ ok: true });
 }));
 

@@ -17,7 +17,7 @@ Push your site branches before switching computers. Anything not pushed lives on
 
 ## What it edits
 
-One tab per collection, named like the site nav:
+The **Content** menu in the header (it shows the collection you're in) lists every collection, named like the site nav:
 
 | Tab | Directory | Notes |
 | --- | --- | --- |
@@ -27,7 +27,9 @@ One tab per collection, named like the site nav:
 | Chronicles | `_learning-logs/` | **Skill** and **Session log** kinds (a session picks its parent from existing skills) |
 | Explorations | `_tutorials/` | New files get the `YYYY-MM-DD-` prefix the existing ones use |
 | Field Notes | `_writeups/` | |
-| Tags | all of the above | See below |
+| Pages | `_pages/` | Site pages (About, Résumé, the index pages). Layout picker from `_layouts/`, permalink, and **Show in the navigation bar** |
+
+**Tags** and **Settings** are separate tabs.
 
 Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` and `public` default read from `_config.yml`. The Preview tab renders the entry's front matter and Markdown in the site's look (an approximation; a real Jekyll build is the final word). The **Visible to the AI chat** switch writes `public: false`, which keeps the entry out of `context.json`.
 
@@ -37,6 +39,11 @@ Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` 
 - **Normalize on save:** a tag you add takes the spelling already used most often (type `DNS`, get `dns`). Tags already on an entry are never rewritten.
 - **✦ Suggest tags** (tags field): scores your existing tags against the entry's title, summary, topic and body, and also offers the entry's own tech stack/tools/genre values. Offline and private. Click a suggestion to add it; dashed ones are new to your vocabulary.
 - **Ask Claude** (optional): appears when an API key is set. It sends the entry's title, summary and body, plus your tag vocabulary, to the Claude API and returns up to 8 tags, reusing your spellings. Set `ANTHROPIC_API_KEY` in your environment (preferred), or `"anthropicApiKey"` in the git-ignored `config.json`. The model defaults to `claude-haiku-5-5`; override with `STUDIO_TAG_MODEL` or `"tagModel"`. It costs API usage per click.
+
+## Pages, templates and starting from an existing entry
+
+- **Pages:** create a page from any existing one. **Start from** (top of every new-entry form, in every collection) copies the other entry's fields and body but not its identity (title, date, permalink, ISBN, summary), so a new page can reuse the About or Résumé layout, or a new tutorial can reuse an older one's tags and structure. Tick **Show in the navigation bar** and saving adds one `<li>` link line to `_includes/nav.html`; deleting a page removes its link. Preview is off for pages (the layouts are the site's own); use **Preview** in the header.
+- **Markdown templates:** the **Templates** menu above the body has built-in skeletons that mirror the headings of your own entries (box writeup, tutorial, deep dive, skill log, study session, book review, certification notes, simple page, checklist, pros and cons, command and output). Pick one to fill an empty body or insert at the cursor. **Save this body as a template** keeps your own, for one collection or all of them, in `templates.json` in the Studio folder (commit it to take it to another computer).
 
 ## Auto-fill and writing
 
@@ -108,6 +115,7 @@ The **Settings** tab edits `config.json` (git-ignored, saved with private permis
 - **Model** and **web-search model**.
 - **Covers from Open Library** on or off (off keeps the Studio fully offline apart from Claude).
 - **Branch prefix** for new branches, and the **preview port**.
+- **Website** (edits the site's own files, so they show up as changed files in the git panel): site title, description, site address, contact email, GitHub username and the **chat worker address** (the Cloudflare Worker URL in `assets/js/chat.js`), with a **Test** button that checks the address answers. Only the changed lines are rewritten.
 - **About this install**: version, address, site folder, and where the settings live. The site folder and Studio port are set in `config.json` (or `JEKYLL_REPO`/`PORT`) and need a restart.
 
 ## Not built yet
