@@ -1,62 +1,143 @@
 # Wonderland Studio
 
-A local content editor for the **Wynter's Wonderland** Jekyll site. It runs on your machine, edits the site's Markdown files in place, and binds to `127.0.0.1` only.
+A local content editor for the **Wynter's Wonderland** Jekyll site. It edits the site's Markdown files in place and binds to `127.0.0.1` only.
 
-## Run
+## Set up on a new computer
 
-```bash
-npm install
-cp config.example.json config.json   # set "repo" to your local nermeta.github.io clone
-npm start                            # http://localhost:4747
+**Windows:** the Studio runs inside WSL (Ubuntu). Once, in **Windows PowerShell**:
+
+```powershell
+wsl --install -d Ubuntu     # then restart if it asks, and finish Ubuntu's first-run username/password
 ```
 
-Or skip the config file: `JEKYLL_REPO=/path/to/repo npm start`
-(PowerShell: `$env:JEKYLL_REPO="C:\path\to\repo"; npm start`)
+Then open **Ubuntu** and run:
+
+```bash
+git clone -b tags-and-setup https://github.com/Nermeta/Wonderland-Studio ~/Wonderland-Studio
+cd ~/Wonderland-Studio
+bash install.sh             # add --with-preview to also install Ruby for the Preview button
+```
+
+`install.sh` is safe to run again. It installs git/curl if missing, installs Node through nvm if Node is missing or older than 18, runs `npm install`, clones the website into `./site`, checks everything with `npm run doctor`, and makes the desktop icon. Then double-click the icon. Keep the Studio in your Linux home folder (not under `/mnt/c`).
+
+**Linux / macOS:** the same `git clone` and `bash install.sh`.
+
+**Check a computer at any time:** `npm run doctor` lists what is ready and, for anything missing, the exact command to fix it (Node 18+, git and your git name/email, packages, the website folder, GitHub reachable, GitHub sign-in for pushing, Ruby for Preview, the desktop icon). `npm run doctor -- --fix` also installs packages and fetches the site. Pushing needs a GitHub sign-in the first time: `sudo apt install gh`, then `gh auth login` and `gh auth setup-git`.
+
+By hand instead: `npm install`, `npm run setup` (clones the website into `./site`, ignored by this repo's git), `npm start` (http://localhost:4747). To use an existing clone of the site, copy `config.example.json` to `config.json` and set `"repo"`, or run with `JEKYLL_REPO=/path/to/site`.
+
+Push your site branches before switching computers. Anything not pushed lives only in that computer's `./site`.
+
+## A desktop icon
+
+`npm run launch` starts the Studio if it isn't running and opens it in your browser (the first run on a new computer also installs the packages and fetches the site). `npm run shortcut` puts a **Wonderland Studio** icon on your desktop that does exactly that:
+
+- **Windows with WSL (Ubuntu):** run `npm run shortcut` once in your Ubuntu terminal, in this folder. It creates a desktop shortcut that starts the Studio inside WSL and opens it in your Windows browser. A window stays open while the Studio runs; close it, or use **Settings → Quit the Studio**, to stop. Right-click the icon to pin it to the taskbar or Start. If the shortcut opens and closes straight away with “npm: command not found”, your Node install loads only in interactive shells; add its setup lines (for example nvm's) to `~/.profile`. `npm run shortcut -- --print` shows what it would create without changing anything.
+- **Linux:** the same command creates a `.desktop` launcher. **macOS:** it creates a `Wonderland Studio.command` file on the Desktop.
 
 ## What it edits
 
-One tab per collection, named like the site nav:
+The **Content** menu in the header (it shows the collection you're in) lists every collection, named like the site nav:
 
 | Tab | Directory | Notes |
 | --- | --- | --- |
-| Library | `_book-reviews/` | Cover preview from `assets/images/covers/<isbn>.jpg` when present |
-| Emblems | `_certifications/` | Two kinds: **Certification** (badge art + shape picker with live display-case preview) and **Education** |
+| Library | `_book-reviews/` | Cover preview (local `assets/images/covers/<isbn>.jpg`, else Open Library by ISBN) and a **Look up ISBN** button that searches Open Library by title and author |
+| Emblems | `_certifications/` | **Certification** (badge art, shape picker with live display-case preview) and **Education** kinds |
 | Discoveries | `_deep-dives/` | |
-| Chronicles | `_learning-logs/` | Two kinds: **Skill** and **Session log** (picks its parent from existing skills) |
+| Chronicles | `_learning-logs/` | **Skill** and **Session log** kinds (a session picks its parent from existing skills) |
 | Explorations | `_tutorials/` | New files get the `YYYY-MM-DD-` prefix the existing ones use |
 | Field Notes | `_writeups/` | |
 
-Forms are generated from per-collection field schemas (`lib/schemas.js`). Each shows the `layout` and `public` default it reads from `_config.yml`.
+**Tags** and **Settings** are separate tabs.
 
-- **Preview tab** renders the entry's front matter and Markdown in the site's look. It approximates the layout; a real Jekyll build is still the final word.
-- **Visible to the AI chat** toggle writes `public: false`, which keeps the entry out of `context.json`. The page still publishes.
-- Dropdown-style fields (difficulty, platform, topic, tags…) suggest values already used in that collection but accept new ones.
+Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` and `public` default read from `_config.yml`. The Preview tab renders the entry's front matter and Markdown in the site's look (an approximation; a real Jekyll build is the final word). The **Visible to the AI chat** switch writes `public: false`, which keeps the entry out of `context.json`.
+
+## Tags
+
+- **Tags tab:** every value of `tags`, `tech_stack`, `tools`, `genre` and `skills`, with counts, a usage bar, and the entries that use each one (click an entry to open it). Filter by used once / used 2+ times / spelling clashes. A clash means one field spells the same tag two ways (`DNS` and `dns`). A note such as *also "DNS" in skills* means a different field spells it differently; fields are separate vocabularies, so that is informational only.
+- **Normalize on save:** a tag you add takes the spelling already used most often (type `DNS`, get `dns`). Tags already on an entry are never rewritten.
+- **✦ Suggest tags** (tags field): scores your existing tags against the entry's title, summary, topic and body, and also offers the entry's own tech stack/tools/genre values. Offline and private. Click a suggestion to add it; dashed ones are new to your vocabulary.
+- **Ask Claude** (optional): appears when an API key is set. It sends the entry's title, summary and body, plus your tag vocabulary, to the Claude API and returns up to 8 tags, reusing your spellings. Set `ANTHROPIC_API_KEY` in your environment (preferred), or `"anthropicApiKey"` in the git-ignored `config.json`. The model defaults to `claude-haiku-5-5`; override with `STUDIO_TAG_MODEL` or `"tagModel"`. It costs API usage per click.
+
+## Templates and starting from an existing entry
+
+- **Start from** (top of every new-entry form) copies another entry's fields and body but not its identity (title, date, ISBN, summary), so a new tutorial can reuse an older one's tags and structure.
+- **Markdown templates:** the **Templates** menu above the body has built-in skeletons that mirror the headings of your own entries (box writeup, tutorial, deep dive, skill log, study session, book review, certification notes, checklist, pros and cons, command and output). Pick one to fill an empty body or insert at the cursor. **Save this body as a template** keeps your own, for one collection or all of them, in `templates.json` in the Studio folder (commit it to take it to another computer).
+
+## Auto-fill and writing
+
+**✦ Auto-fill empty fields** (top of every form) proposes values for blank fields only, and you review each one before it is applied (**Use** or **Use all**). It works offline:
+- **Minutes to read:** about 200 words a minute, with code counted slower.
+- **Summary:** the opening paragraph, to edit.
+- **Topic, category, domain:** the most common value among entries that share your tags, otherwise a value already used that is named in the title or tags.
+- **Platform and difficulty (Field Notes):** from the title (`HTB:`, `THM:`) and the box info table.
+- **Subjects, tools, tags:** your existing values that the entry names, plus any of its tags that are in that vocabulary.
+- **Audience:** the most common one in the collection. **Subject (Chronicles):** the title without “Study Log”.
+
+**Auto-fill with Claude** (needs an API key) also fills what rules can't, such as Difficulty and Outcome. Difficulty and Outcome must be one of the field's allowed options. It sends the entry's title, tags and body to the Claude API.
+
+The body box has a Markdown toolbar (bold, italic, headings, lists, quote, code, link, table, divider; Ctrl/Cmd+B, I and K work too, and undo works). The **⛓** button links to another page on the site: search your pages and entries, pick one, and it inserts `[text](/section/page/)` (it wraps the text you selected, or uses the page's title). Entries without a page of their own (Emblems) are not listed. **Writing focus** (or Ctrl/Cmd+Shift+F) hides all the fields so only the body shows; it is remembered in your browser.
+
+## Covers and ISBN lookup
+
+The site's deploy workflow downloads covers from Open Library and caches them, so a fresh clone often has no `assets/images/covers/` files. The Studio therefore shows the local file when there is one and otherwise loads the cover straight from Open Library in your browser (the ISBN is sent to openlibrary.org). **Look up ISBN** (Library form) searches Open Library with the title and author you typed. Pick a result to set the ISBN and fill in any empty author, page count, genre and topic. Genre and topic only use values you already have (plus fiction/nonfiction, inferred from Open Library's subjects), so a genre you have never used is not added automatically. Both need internet access.
+
+## Credential links (Emblems)
+
+Under **Credential link** there are two buttons. **Search the web** opens a DuckDuckGo search for the title, issuer and "certification" in a new tab; it needs no key and sends nothing from the Studio. **Find with Claude** (needs an API key) has Claude search the web for the issuer's official page and suggest the link, issuer, topic and skills. Review the card, then **Use these** fills the link and any empty issuer, topic and skills, reusing your existing spellings. Only `https` links are accepted. It uses Claude's web search tool, so it costs more than a tag suggestion; the model comes from `STUDIO_SEARCH_MODEL`/`"searchModel"` (default: the tag model). **Suggest skills** on the Skills field matches your existing skills against the title and description, offline.
 
 ## It only changes what you change
 
-Saving never re-writes a whole header. The editor splits front matter into per-key blocks and rewrites **only the keys whose value changed**. Everything else is written back byte-for-byte: comments, quoting, key order, date style, line endings, keys the editor doesn't know about (shown read-only under "Other front matter"). A no-op save writes nothing.
+Saving never rewrites a whole header. Front matter is split into per-key blocks and **only keys whose value changed** are rewritten; everything else is kept byte-for-byte (comments, quoting, key order, date style, line endings, keys the editor doesn't manage). A no-op save writes nothing.
 
-- Legacy values outside a field's usual options (for example a `status` the schema doesn't list) never block saving until you change that field.
-- Duplicate keys are flagged. Editing that field keeps the last one, as Jekyll does.
-- If a file changes on disk while you have it open, saving asks before overwriting.
-- Delete moves the file to `.studio-trash/` in the repo rather than erasing it.
+- Legacy values outside a field's usual options never block saving until you change that field.
+- Duplicate keys are flagged; editing one keeps the last, as Jekyll does.
+- If a file changes on disk while it is open, saving asks before overwriting.
+- Delete moves the file to `.studio-trash/` in the site repo.
 
-Run `npm test` to prove it on your own repo: it copies the site to a temp folder, does a no-op save on every file, and fails if a single byte differs.
+`npm test` runs the unit tests (tags, credentials, auto-fill, settings, site values, templates, the shortcut script), then copies your site to a temp folder, does a no-op save on every file, and fails if one byte differs.
 
-## Git (branch + commit only)
+## Git: commit, push, review
 
-The chip in the top right shows the current branch and how many files changed. From there you can create or switch to a branch, tick the files to include, and commit with a one-line message.
+The chip in the header shows the current branch, the number of changed files and any commits not pushed (↑2). Open it to create or switch branches, pick files, and commit with a one-line message (max 100 characters). Under **Share on GitHub**:
 
-- Commits on `main`/`master` are refused. Create a feature branch first.
-- Messages must be a single line (max 100 characters).
-- It never pushes. Push and open the PR yourself.
+- **Check GitHub** runs `git fetch --prune`, so the status below it is current. **Pull updates** appears when your branch is behind and fast-forwards only.
+- **Update from main** is for after you merge a pull request on GitHub: it switches to `main` and downloads the merged work (the Studio edits a local copy, so merged changes only appear after this). It refuses while you have uncommitted changes.
+- **Push branch** pushes the current feature branch to `origin`. It refuses on `main`/`master`, refuses while files are uncommitted, never forces, and tells you to run `gh auth login` if GitHub rejects your sign-in.
+- **Open pull request ↗** opens GitHub's compare page for the branch (or, if the GitHub CLI is signed in and a pull request exists, that pull request). Review and merge it there; the Studio does not merge.
+- Commits on `main`/`master` are refused. Create a feature branch first, and check that your branch includes the newest `main` (the dialog says when it doesn't).
+
+## Preview the site locally
+
+**Preview site** (header) runs `bundle exec jekyll serve` in your site folder and shows its log, then links to `http://127.0.0.1:4000/`. It needs Ruby and Bundler on your computer (`sudo apt install ruby-full build-essential`, then `bundle install` once in `site/`). If something is missing it says what. Stopping the Studio stops the preview.
+
+## Docker (optional, not yet tested)
+
+The native setup above needs only Node and git. These files are provided for running the Studio in a container if you prefer:
+
+```bash
+mkdir -p site
+cp .env.example .env     # set GIT_NAME, GIT_EMAIL (and optionally ANTHROPIC_API_KEY)
+docker compose run --rm studio node scripts/setup.js   # clones the site into ./site
+docker compose up --build                              # http://localhost:4747
+```
+
+The container runs as your own user (`STUDIO_UID`/`STUDIO_GID`, default 1000) so files in `./site` stay yours, and the port is published to localhost only. Commits need `GIT_NAME` and `GIT_EMAIL` because the container has no git identity of its own.
 
 ## Safety
 
-- Binds to `127.0.0.1`, checks the `Host` header (DNS-rebinding guard) and rejects cross-origin API calls.
-- Filenames are validated; nothing outside the collection folders, `assets/images/badges/` and `.studio-trash/` is written.
-- Add `.studio-trash/` to the site's `.gitignore`. The git panel already hides it.
+Binds to `127.0.0.1`, checks the `Host` header (DNS-rebinding guard), rejects cross-origin API calls, validates every filename, and only writes inside the collection folders, `assets/images/badges/` and `.studio-trash/`. Add `.studio-trash/` to the site's `.gitignore`; the git panel already hides it.
+
+## Settings
+
+The **Settings** tab edits `config.json` (git-ignored, saved with private permissions) and applies changes at once, no restart:
+- **Claude API key** (write-only: the Studio shows only the last four characters and never sends the key to the browser), with a **Test** button that checks it against the API's free model list. An `ANTHROPIC_API_KEY` environment variable overrides it and is safer on shared computers.
+- **Model** and **web-search model**.
+- **Covers from Open Library** on or off (off keeps the Studio fully offline apart from Claude).
+- **Branch prefix** for new branches, and the **preview port**.
+- **Website** (edits the site's own files, so they show up as changed files in the git panel): site title, description, site address, contact email, GitHub username and the **chat worker address** (the Cloudflare Worker URL in `assets/js/chat.js`), with a **Test** button that checks the address answers. Only the changed lines are rewritten.
+- **About this install**: version, address, site folder, and where the settings live. The site folder and Studio port are set in `config.json` (or `JEKYLL_REPO`/`PORT`) and need a restart.
 
 ## Not built yet
 
-`_posts/` (only the default "Welcome to Jekyll" post lives there), `_pages/`, `context.json` regeneration, and local Jekyll builds.
+`_posts/` (only the default "Welcome to Jekyll" post), editing `_pages/` and the navigation (dropped for now), `context.json` regeneration, local Jekyll builds, tag rename/merge.

@@ -5,7 +5,7 @@
  * Repo location (first match wins):
  *   1. JEKYLL_REPO env var
  *   2. config.json  { "repo": "...", "port": 4747 }
- *   3. ../wynters-wonderland (sibling folder)
+ *   3. ./site (a clone of the website inside this folder; `npm run setup` creates it)
  */
 const express = require('express');
 const multer = require('multer');
@@ -17,13 +17,29 @@ const { execFile } = require('child_process');
 
 const FM = require('./lib/frontmatter');
 const { COLLECTIONS } = require('./lib/schemas');
+const Tags = require('./lib/tags');
+const SiteConfig = require('./lib/siteconfig');
+const Templates = require('./lib/templates').make(process.env.STUDIO_TEMPLATES ? path.resolve(process.env.STUDIO_TEMPLATES) : path.join(__dirname, 'templates.json'));
 
 // ---------- config ----------
+const CONFIG_FILE = process.env.STUDIO_CONFIG ? path.resolve(process.env.STUDIO_CONFIG) : path.join(__dirname, 'config.json');
 let fileCfg = {};
-try { fileCfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8')); } catch { /* optional */ }
+try { fileCfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* optional */ }
 
-const REPO = path.resolve(process.env.JEKYLL_REPO || fileCfg.repo || path.join(__dirname, '..', 'wynters-wonderland'));
+// Relative paths in config.json resolve against this folder, so "./site" travels with the Studio.
+const REPO = process.env.JEKYLL_REPO
+  ? path.resolve(process.env.JEKYLL_REPO)
+  : path.resolve(__dirname, fileCfg.repo || 'site');
+const HOST = process.env.STUDIO_HOST || '127.0.0.1'; // only change inside a container; publish the port to localhost
 const PORT = Number(process.env.PORT || fileCfg.port || 4747);
+const DEFAULT_MODEL = 'claude-haiku-5-5';
+// Settings can be changed in the Settings tab (saved to config.json); environment variables win.
+const apiKey = () => process.env.ANTHROPIC_API_KEY || fileCfg.anthropicApiKey || '';
+const tagModel = () => process.env.STUDIO_TAG_MODEL || fileCfg.tagModel || DEFAULT_MODEL;
+const searchModel = () => process.env.STUDIO_SEARCH_MODEL || fileCfg.searchModel || tagModel();
+const previewPort = () => Number(fileCfg.previewPort) || 4000;
+const onlineCovers = () => fileCfg.onlineCovers !== false;
+const branchPrefix = () => (typeof fileCfg.branchPrefix === 'string' ? fileCfg.branchPrefix : 'studio/');
 const IMG_DIR = path.join(REPO, 'assets', 'images');
 const BADGE_DIR = path.join(IMG_DIR, 'badges');
 const COVER_DIR = path.join(IMG_DIR, 'covers');
@@ -168,13 +184,71 @@ function validateFields(kind, values, { create, orig = {} }) {
   return { errs, clean };
 }
 
+// ---------- tags ----------
+function allDocs() {
+  const docs = [];
+  for (const c of COLLECTIONS) {
+    const dir = colDir(c);
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir).filter(x => /\.(md|markdown)$/.test(x))) {
+      const slug = f.replace(/\.(md|markdown)$/, '');
+      if (!slugOk(slug)) continue;
+      try {
+        const d = readDoc(c, slug);
+        docs.push({ coll: c.id, collLabel: c.label, slug, title: d.data.title != null ? String(d.data.title) : slug, data: d.data });
+      } catch { /* unreadable file: skip */ }
+    }
+  }
+  return docs;
+}
+const inventory = () => Tags.buildInventory(allDocs());
+
+/** Newly added tag-like values take the spelling already used elsewhere. */
+function normalizeTagFields(kind, clean, orig) {
+  const inv = inventory(), notes = [];
+  for (const fd of kind.fields) {
+    if (fd.type !== 'list' || !Tags.TAG_FIELDS.includes(fd.key) || !Array.isArray(clean[fd.key])) continue;
+    const existing = new Set(Tags.asList(orig && orig[fd.key]));
+    const r = Tags.normalizeItems(clean[fd.key], inv[fd.key].canonical, existing);
+    clean[fd.key] = r.items;
+    r.changed.forEach(ch => notes.push({ field: fd.key, ...ch }));
+  }
+  return notes;
+}
+
 // ---------- git ----------
 const git = (args) => new Promise((resolve, reject) => {
-  execFile('git', args, { cwd: REPO, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+  execFile('git', args, { cwd: REPO, maxBuffer: 10 * 1024 * 1024, windowsHide: true, timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, stdout, stderr) => {
     if (err) return reject(httpErr(400, (stderr || err.message).trim().split('\n').slice(0, 4).join(' ')));
     resolve(stdout);
   });
 });
+
+/** Where origin is on GitHub, and how this branch compares with origin (from the last fetch). */
+async function remoteInfo(branch) {
+  const out = { web: null, upstream: null, ahead: 0, behind: 0, onRemote: false, baseBehind: 0, base: null };
+  try {
+    const url = (await git(['config', '--get', 'remote.origin.url'])).trim();
+    const m = url.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+    if (m) out.web = `https://github.com/${m[1]}/${m[2]}`;
+  } catch { return out; }
+  if (!branch) return out;
+  try {
+    out.upstream = (await git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${branch}@{u}`])).trim();
+    const [a, b] = (await git(['rev-list', '--left-right', '--count', `${branch}...${out.upstream}`])).trim().split(/\s+/).map(Number);
+    out.ahead = a || 0; out.behind = b || 0;
+  } catch { /* no upstream yet */ }
+  try { await git(['rev-parse', '--verify', '-q', `refs/remotes/origin/${branch}`]); out.onRemote = true; } catch { out.onRemote = false; }
+  for (const base of ['main', 'master']) {
+    try {
+      await git(['rev-parse', '--verify', '-q', `refs/remotes/origin/${base}`]);
+      out.base = base;
+      if (branch !== base) out.baseBehind = Number((await git(['rev-list', '--count', `${branch}..origin/${base}`])).trim()) || 0;
+      break;
+    } catch { /* try next */ }
+  }
+  return out;
+}
 
 async function gitState() {
   try { await git(['rev-parse', '--is-inside-work-tree']); } catch { return { isRepo: false }; }
@@ -190,7 +264,8 @@ async function gitState() {
     changes.push({ path: p, code: code.trim() || '?', label: code === '??' ? 'new' : code.includes('D') ? 'deleted' : code.includes('A') ? 'new' : 'modified' });
   }
   const branches = (await git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'])).split('\n').filter(Boolean);
-  return { isRepo: true, branch, protected: !branch || PROTECTED_BRANCHES.includes(branch), branches, changes };
+  const remote = await remoteInfo(branch);
+  return { isRepo: true, branch, protected: !branch || PROTECTED_BRANCHES.includes(branch), branches, changes, remote };
 }
 
 // ---------- app ----------
@@ -289,6 +364,7 @@ app.post('/api/c/:coll', wrap(async (req, res) => {
   const kind = c.kinds[kindName];
   const { errs, clean } = validateFields(kind, req.body.values || {}, { create: true });
   if (errs.length) throw httpErr(400, errs.join(' '));
+  const normalized = normalizeTagFields(kind, clean, null);
 
   const entries = [];
   for (const fd of kind.fields) {
@@ -303,11 +379,23 @@ app.post('/api/c/:coll', wrap(async (req, res) => {
   if (base && !slugOk(base)) throw httpErr(400, 'Filename may only use letters, numbers, dots, dashes and underscores.');
   if (!base) base = slugify(clean.title);
   if (req.body.slug && findFile(c, base)) throw httpErr(409, `A file named ${base} already exists.`);
+  // Refuse a second copy of the same entry (a double click or double submit) instead of quietly writing title-2.md
+  const sameTitle = String(clean.title || '').trim().toLowerCase();
+  const isbnOf = v => String(v || '').replace(/[^0-9Xx]/g, '').toUpperCase();
+  for (const it of listDocs(c)) {
+    if (it.error) continue;
+    const other = readDoc(c, it.slug);
+    if (!other) continue;
+    if (sameTitle && String(other.data.title || '').trim().toLowerCase() === sameTitle && other.kind === kindName)
+      throw httpErr(409, `"${clean.title}" already exists (${path.basename(other.file)}). Open that entry instead, or give this one a different title.`);
+    if (c.id === 'library' && isbnOf(clean.isbn) && isbnOf(other.data.isbn) === isbnOf(clean.isbn))
+      throw httpErr(409, `A book with ISBN ${clean.isbn} is already in the library ("${other.data.title}", ${path.basename(other.file)}).`);
+  }
   const slug = req.body.slug ? base : uniqueSlug(c, base);
   const body = String(req.body.body || '').replace(/\r\n/g, '\n').trim();
   const text = FM.joinFile({ bom: false, eol: '\n', fm: FM.buildNew(entries, kind.order), rest: body ? `\n${body}\n` : '' });
   fs.writeFileSync(path.join(colDir(c), slug + '.md'), text, 'utf8');
-  res.status(201).json({ slug });
+  res.status(201).json({ slug, normalized });
 }));
 
 app.put('/api/c/:coll/:slug', wrap(async (req, res) => {
@@ -322,6 +410,7 @@ app.put('/api/c/:coll/:slug', wrap(async (req, res) => {
   const dflt = configDefaults(c);
   const { errs, clean } = validateFields(kind, req.body.values || {}, { create: false, orig: doc.data });
   if (errs.length) throw httpErr(400, errs.join(' '));
+  const normalized = normalizeTagFields(kind, clean, doc.data);
 
   // Only keys whose value actually changed are touched.
   const edits = [];
@@ -335,12 +424,12 @@ app.put('/api/c/:coll/:slug', wrap(async (req, res) => {
   const newBody = String(req.body.body != null ? req.body.body : doc.body).replace(/\r\n/g, '\n').trim();
   const bodyChanged = newBody !== doc.body;
 
-  if (!edits.length && !bodyChanged) return res.json({ slug: req.params.slug, unchanged: true, mtime: doc.mtime });
+  if (!edits.length && !bodyChanged) return res.json({ slug: req.params.slug, unchanged: true, mtime: doc.mtime, normalized });
 
   const blocks = FM.applyEdits(doc.blocks, edits, kind.order);
   const next = { ...doc.split, fm: FM.blocksToText(blocks), rest: bodyChanged ? (newBody ? `\n${newBody}\n` : '') : doc.split.rest };
   fs.writeFileSync(doc.file, FM.joinFile(next), 'utf8');
-  res.json({ slug: req.params.slug, changed: edits.map(e => e.key).concat(bodyChanged ? ['body'] : []), mtime: fs.statSync(doc.file).mtimeMs });
+  res.json({ slug: req.params.slug, changed: edits.map(e => e.key).concat(bodyChanged ? ['body'] : []), normalized, mtime: fs.statSync(doc.file).mtimeMs });
 }));
 
 // "Delete" moves to .studio-trash so a misclick is recoverable.
@@ -352,6 +441,93 @@ app.delete('/api/c/:coll/:slug', wrap(async (req, res) => {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   fs.renameSync(file, path.join(TRASH_DIR, `${stamp}__${c.dir.replace(/^_/, '')}__${path.basename(file)}`));
   res.json({ ok: true });
+}));
+
+// ---------- site-wide values (title, URLs, chat worker) ----------
+app.get('/api/site-config', wrap(async (req, res) => { needRepo(); res.json(SiteConfig.read(REPO)); }));
+app.put('/api/site-config', wrap(async (req, res) => {
+  needRepo();
+  const b = req.body || {};
+  const changed = SiteConfig.write(REPO, { title: b.title, email: b.email, description: b.description, url: b.url, github_username: b.github_username, workerUrl: b.workerUrl });
+  res.json({ changed, config: SiteConfig.read(REPO) });
+}));
+// Is the chat worker reachable? A bare request: any HTTP answer (even 404/405) means the address resolves.
+app.post('/api/site-config/test-worker', wrap(async (req, res) => {
+  const v = SiteConfig.validate({ workerUrl: (req.body || {}).workerUrl });
+  let r;
+  try { r = await fetch(v.workerUrl, { method: 'OPTIONS', signal: AbortSignal.timeout(10000) }); }
+  catch (e) { throw httpErr(502, `Could not reach ${v.workerUrl}: ${e.cause && e.cause.code ? e.cause.code : e.message}`); }
+  res.json({ status: r.status, ok: r.status < 500 });
+}));
+
+// ---------- markdown templates ----------
+app.get('/api/templates', (req, res) => res.json(Templates.list(String(req.query.coll || ''))));
+app.post('/api/templates', wrap(async (req, res) => {
+  const b = req.body || {};
+  res.json({ template: Templates.add({ name: b.name, coll: b.coll, body: b.body }, COLLECTIONS.map(c => c.id)) });
+}));
+app.delete('/api/templates/:id', wrap(async (req, res) => {
+  if (!/^u-[a-z0-9]+$/.test(req.params.id) || !Templates.remove(req.params.id)) throw httpErr(404, 'Template not found.');
+  res.json({ ok: true });
+}));
+
+// ---------- tags ----------
+app.get('/api/tags', wrap(async (req, res) => {
+  res.json({ fields: inventory(), fieldNames: Tags.TAG_FIELDS, claude: !!apiKey() });
+}));
+
+app.post('/api/tags/suggest', wrap(async (req, res) => {
+  const b = req.body || {};
+  const v = b.values || {};
+  const entry = {
+    title: v.title, summary: v.summary, topic: v.topic, body: String(b.body || ''),
+    current: b.field === 'skills' ? v.skills : v.tags,
+    lists: { tech_stack: v.tech_stack, tools: v.tools, genre: v.genre }
+  };
+  const inv = inventory();
+  if (b.mode === 'claude') {
+    res.json({ mode: 'claude', suggestions: await Tags.suggestClaude(entry, inv, { apiKey: apiKey(), model: tagModel() }) });
+  } else {
+    res.json({ mode: 'local', suggestions: Tags.suggestLocal(entry, inv, 8, b.field === 'skills' ? 'skills' : 'tags') });
+  }
+}));
+
+// ---------- auto-fill empty fields ----------
+app.post('/api/autofill', wrap(async (req, res) => {
+  const b = req.body || {};
+  const c = byId(b.coll);
+  if (!c) throw Object.assign(new Error('Unknown collection.'), { status: 404 });
+  const kind = c.kinds[b.kind] || Object.values(c.kinds)[0];
+  const fields = kind.fields.filter(f => !f.hidden && !f.custom && ['text', 'combo', 'longtext', 'number', 'list'].includes(f.type));
+  const docs = listDocs(c).filter(i => !i.error).map(i => ({ ...readDoc(c, i.slug).data, __slug: i.slug }));
+  const AF = require('./lib/autofill');
+  const input = { collLabel: c.label, fields, values: b.values || {}, body: String(b.body || ''), docs, inventory: inventory(), titleSlug: b.slug || '' };
+  if (b.mode === 'claude') {
+    res.json({ mode: 'claude', proposals: await AF.claudeAutofill(input, { apiKey: apiKey(), model: tagModel() }), needsClaude: [] });
+  } else {
+    res.json({ mode: 'local', ...AF.localAutofill(input) });
+  }
+}));
+
+// ---------- credential lookup (Claude + web search) ----------
+app.post('/api/credential/find', wrap(async (req, res) => {
+  const b = req.body || {};
+  const inv = inventory();
+  const topics = Array.isArray(b.topics) ? b.topics.map(String).slice(0, 100) : [];
+  res.json({ result: await require('./lib/credential').findCredential(
+    { title: b.title, issuer: b.issuer, topics, skills: inv.skills.tags.map(t => t.tag) },
+    { apiKey: apiKey(), model: searchModel() }) });
+}));
+
+// ---------- ISBN lookup (Open Library) ----------
+app.get('/api/isbn', wrap(async (req, res) => {
+  res.json({ results: await require('./lib/isbn').lookupIsbn({ title: req.query.title, author: req.query.author, genres: String(req.query.genres || '').split('|').filter(Boolean), topics: String(req.query.topics || '').split('|').filter(Boolean) }) });
+}));
+
+// ---------- pages a link can point to ----------
+app.get('/api/linkables', wrap(async (req, res) => {
+  needRepo();
+  res.json({ groups: require('./lib/links').listLinkables(REPO, COLLECTIONS, c => listDocs(c)) });
 }));
 
 // ---------- markdown preview ----------
@@ -388,7 +564,7 @@ app.post('/api/badges', (req, res) => {
   });
 });
 
-// ---------- git (branch + commit only; never pushes) ----------
+// ---------- git (branches, commits, and pushing feature branches; never main, never forced) ----------
 app.get('/api/git', wrap(async (req, res) => { needRepo(); res.json(await gitState()); }));
 
 app.post('/api/git/branch', wrap(async (req, res) => {
@@ -419,13 +595,157 @@ app.post('/api/git/commit', wrap(async (req, res) => {
   res.json({ sha, state: await gitState() });
 }));
 
+// Sharing: fetch, push the feature branch, fast-forward pull, find the pull request.
+const authHint = m => /Authentication|could not read Username|Permission denied|denied|403/i.test(m)
+  ? m + ' (Sign in once in your terminal with “gh auth login”, then try again.)' : m;
+
+app.post('/api/git/fetch', wrap(async (req, res) => {
+  needRepo();
+  try { await git(['fetch', '--prune', 'origin']); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json(await gitState());
+}));
+
+// After a pull request is merged on GitHub: go back to main and bring the merged work into this computer.
+app.post('/api/git/sync-main', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  if (st.changes.length) throw httpErr(400, 'Commit or discard your changes first, so nothing is lost when switching to main.');
+  try { await git(['fetch', '--prune', 'origin']); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  let main = '';
+  try { main = (await git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])).trim().replace(/^origin\//, ''); } catch { /* not set */ }
+  if (!main) for (const cand of ['main', 'master']) { try { await git(['rev-parse', '--verify', `refs/remotes/origin/${cand}`]); main = cand; break; } catch { /* try next */ } }
+  if (!main) throw httpErr(400, 'Could not tell which branch is the main one.');
+  await git(['switch', main]);
+  try { await git(['pull', '--ff-only', 'origin', main]); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json({ state: await gitState(), main });
+}));
+
+app.post('/api/git/push', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  if (st.protected) throw httpErr(400, `You're on ${st.branch || 'a detached HEAD'}. Only feature branches are pushed from the Studio.`);
+  if (st.changes.length) throw httpErr(400, `${st.changes.length} file${st.changes.length === 1 ? ' is' : 's are'} not committed yet. Commit them first so the push includes them.`);
+  try { await git(['push', '-u', 'origin', st.branch]); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json({ state: await gitState() });
+}));
+
+app.post('/api/git/pull', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  if (!st.remote.upstream) throw httpErr(400, 'This branch has no remote copy to pull from yet.');
+  if (st.changes.length) throw httpErr(400, 'Commit or discard your changes before pulling.');
+  try { await git(['pull', '--ff-only']); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json({ state: await gitState() });
+}));
+
+// Open pull request for this branch, if the GitHub CLI is signed in. Optional.
+app.get('/api/git/pr', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  let pr = null;
+  if (st.branch && st.remote.onRemote) {
+    pr = await new Promise(resolve => execFile('gh', ['pr', 'list', '--head', st.branch, '--state', 'all', '--json', 'url,state,number', '--limit', '1'],
+      { cwd: REPO, timeout: 8000, windowsHide: true }, (err, out) => {
+        if (err) return resolve(null);
+        try { resolve(JSON.parse(out)[0] || null); } catch { resolve(null); }
+      }));
+  }
+  res.json({ pr });
+}));
+
+// ---------- settings ----------
+const sourceOf = (envName, fileKey) => (process.env[envName] ? 'environment' : fileCfg[fileKey] ? 'config' : 'default');
+
+function settingsView() {
+  const key = apiKey();
+  return {
+    apiKey: { set: !!key, tail: key ? key.slice(-4) : '', source: process.env.ANTHROPIC_API_KEY ? 'environment' : fileCfg.anthropicApiKey ? 'config' : 'none' },
+    tagModel: { value: tagModel(), source: sourceOf('STUDIO_TAG_MODEL', 'tagModel'), default: DEFAULT_MODEL },
+    searchModel: { value: searchModel(), source: process.env.STUDIO_SEARCH_MODEL ? 'environment' : fileCfg.searchModel ? 'config' : 'default', default: 'same as the tag model' },
+    previewPort: previewPort(),
+    onlineCovers: onlineCovers(),
+    branchPrefix: branchPrefix(),
+    info: {
+      version: require('./package.json').version, node: process.version, repo: REPO, repoExists: repoExists(),
+      port: PORT, host: HOST, configFile: CONFIG_FILE, siteRemote: fileCfg.siteRemote || process.env.SITE_REMOTE || 'https://github.com/Nermeta/nermeta.github.io'
+    }
+  };
+}
+
+function saveConfig(patch) {
+  let cur = {};
+  try { cur = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* new file */ }
+  for (const [k, v] of Object.entries(patch)) { if (v === undefined) continue; if (v === null) delete cur[k]; else cur[k] = v; }
+  const tmp = CONFIG_FILE + '.tmp';
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(cur, null, 2) + '\n', { mode: 0o600 });
+    fs.renameSync(tmp, CONFIG_FILE);
+  } catch (e) { throw httpErr(500, `Could not write config.json: ${e.message}`); }
+  fileCfg = cur;
+}
+
+app.get('/api/settings', (req, res) => res.json(settingsView()));
+
+app.put('/api/settings', wrap(async (req, res) => {
+  const b = req.body || {}, patch = {};
+  if (b.anthropicApiKey !== undefined) {
+    const k = String(b.anthropicApiKey).trim();
+    if (k && !/^[\w-]{20,300}$/.test(k)) throw httpErr(400, 'That does not look like an API key (letters, numbers, - and _ only).');
+    patch.anthropicApiKey = k || null;
+  }
+  for (const name of ['tagModel', 'searchModel']) {
+    if (b[name] === undefined) continue;
+    const v = String(b[name]).trim();
+    if (v && !/^[\w.:-]{3,80}$/.test(v)) throw httpErr(400, `${name === 'tagModel' ? 'Model' : 'Search model'} names use letters, numbers and - . : _ only.`);
+    patch[name] = v || null;
+  }
+  if (b.previewPort !== undefined) {
+    const n = Number(b.previewPort);
+    if (!Number.isInteger(n) || n < 1024 || n > 65535 || n === PORT) throw httpErr(400, `Preview port must be a whole number from 1024 to 65535, and not ${PORT} (the Studio's own).`);
+    patch.previewPort = n;
+  }
+  if (b.onlineCovers !== undefined) patch.onlineCovers = !!b.onlineCovers;
+  if (b.branchPrefix !== undefined) {
+    const v = String(b.branchPrefix).trim();
+    if (v && !/^[A-Za-z0-9][A-Za-z0-9._-]*\/$/.test(v) && !/^[A-Za-z0-9][A-Za-z0-9._-]*-$/.test(v)) throw httpErr(400, 'Branch prefix looks like “studio/” or “edit-”.');
+    patch.branchPrefix = v;
+  }
+  saveConfig(patch);
+  res.json(settingsView());
+}));
+
+// Checks a key against the API's (free) model list. The key is never sent back to the browser.
+app.post('/api/settings/test-key', wrap(async (req, res) => {
+  const typed = String((req.body || {}).anthropicApiKey || '').trim();
+  const key = typed || apiKey();
+  if (!key) throw httpErr(400, 'No API key to test yet.');
+  let r;
+  try { r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(15000) }); }
+  catch (e) { throw httpErr(502, `Could not reach the Claude API: ${e.message}`); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw httpErr(400, `The API rejected this key${j.error && j.error.message ? ': ' + j.error.message : ` (${r.status})`}.`);
+  res.json({ ok: true, models: (j.data || []).map(m => m.id) });
+}));
+
+// ---------- quit (so the desktop shortcut's window can be closed from the browser) ----------
+app.post('/api/quit', (req, res) => {
+  res.json({ ok: true });
+  setTimeout(() => process.exit(0), 250);
+});
+
+// ---------- local site preview (Jekyll) ----------
+const Site = require('./lib/site');
+app.get('/api/site', (req, res) => res.json(Site.status()));
+app.post('/api/site/start', wrap(async (req, res) => { needRepo(); res.json(Site.start(REPO, { port: previewPort() })); }));
+app.post('/api/site/stop', (req, res) => res.json(Site.stop()));
+
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (!err.status) console.error(err);
   res.status(err.status || 500).json({ error: err.message || 'Server error.', ...(err.extra || {}) });
 });
 
 if (require.main === module) {
-  app.listen(PORT, '127.0.0.1', () => {
+  app.listen(PORT, HOST, () => {
     console.log(`\n  ♠ Wonderland Studio is open at http://localhost:${PORT}`);
     console.log(`  ♦ Jekyll repo: ${REPO}${repoExists() ? '' : '  (NOT FOUND — set JEKYLL_REPO or config.json)'}\n`);
   });

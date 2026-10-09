@@ -9,8 +9,8 @@
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http');
 
 const cfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8')); } catch { return {}; } })();
-const SRC = path.resolve(process.env.JEKYLL_REPO || cfg.repo || path.join(__dirname, '..', '..', 'wynters-wonderland'));
-if (!fs.existsSync(SRC)) { console.error(`Repo not found: ${SRC}\nSet JEKYLL_REPO or config.json.`); process.exit(2); }
+const SRC = process.env.JEKYLL_REPO ? path.resolve(process.env.JEKYLL_REPO) : path.resolve(__dirname, '..', cfg.repo || 'site');
+if (!fs.existsSync(SRC)) { console.error('Repo not found: ' + SRC + '\nRun "npm run setup", or set JEKYLL_REPO / config.json.'); process.exit(2); }
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-roundtrip-'));
 fs.cpSync(SRC, TMP, { recursive: true, filter: s => !/[\\/](\.git|node_modules|_site|vendor)([\\/]|$)/.test(s) });
@@ -28,7 +28,7 @@ const srv = http.createServer(app).listen(0, '127.0.0.1', async () => {
   for (const c of collections) {
     for (const it of (await j('GET', `/api/c/${c.id}`)).d.items) {
       const det = (await j('GET', `/api/c/${c.id}/${it.slug}`)).d;
-      const file = path.join(TMP, c.dir, it.slug + '.md');
+      const file = ['.md', '.markdown'].map(e => path.join(TMP, c.dir, it.slug + e)).find(fs.existsSync);
       const before = fs.readFileSync(file);
       const r = await j('PUT', `/api/c/${c.id}/${it.slug}`, { values: det.values, body: det.body, mtime: det.mtime });
       n++;

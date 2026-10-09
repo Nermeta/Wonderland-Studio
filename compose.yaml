@@ -1,0 +1,17 @@
+# Optional container setup. Needs a ./site folder first (see README).
+services:
+  studio:
+    build: .
+    # Run as your own user so files written to ./site belong to you.
+    user: "${STUDIO_UID:-1000}:${STUDIO_GID:-1000}"
+    # Published to localhost only. Never expose this port to a network.
+    ports:
+      - "127.0.0.1:4747:4747"
+    volumes:
+      - ./site:/site
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GIT_AUTHOR_NAME: ${GIT_NAME:-}
+      GIT_AUTHOR_EMAIL: ${GIT_EMAIL:-}
+      GIT_COMMITTER_NAME: ${GIT_NAME:-}
+      GIT_COMMITTER_EMAIL: ${GIT_EMAIL:-}

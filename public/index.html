@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600&family=Raleway:wght@300;400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,9 +17,17 @@
       <p class="tagline">The curator's workroom, behind the display case</p>
     </div>
     <nav id="tabs" class="tabs" aria-label="Collections"></nav>
+    <div class="header-actions">
     <button id="git-chip" class="git-chip" type="button" hidden title="Branch and commit">
       <span class="git-glyph">⎇</span><span id="git-branch"></span><span id="git-count" class="git-count"></span>
     </button>
+    <button id="site-chip" class="git-chip" type="button" title="Run the website locally to check it">
+      <span class="git-glyph">◐</span><span>Preview</span><span id="site-dot" class="site-dot" hidden></span>
+    </button>
+    <button id="quit-chip" class="git-chip quit-chip" type="button" title="Stop the Studio">
+      <span class="git-glyph">⏻</span><span>Quit</span>
+    </button>
+    </div>
   </header>
 
   <div id="banner" class="banner" hidden></div>
@@ -40,6 +49,9 @@
       <form id="form" autocomplete="off" novalidate>
         <div class="bench-head">
           <h2 id="form-title">New entry</h2>
+          <label id="start-wrap" class="start-wrap" hidden><span>Start from</span>
+            <select id="start-from" aria-label="Start from an existing entry"></select>
+          </label>
           <span id="dirty" class="dirty" hidden>● unsaved</span>
           <code id="file-name" class="file-name"></code>
         </div>
@@ -51,12 +63,22 @@
           <button type="button" class="pane-tab on" data-pane="edit">Edit</button>
           <button type="button" class="pane-tab" data-pane="preview" id="tab-preview">Preview</button>
           <span class="layout-note" id="layout-note"></span>
+          <button type="button" id="btn-focus" class="focus-btn" aria-pressed="false" title="Hide the fields above and write in the Markdown box (Ctrl/Cmd+Shift+F)">⤢ Writing focus</button>
         </div>
 
         <div id="pane-edit">
+          <div id="af" class="af">
+            <div class="af-bar">
+              <button type="button" id="af-local" class="btn-mini">✦ Auto-fill empty fields</button>
+              <button type="button" id="af-claude" class="btn-mini claude" hidden>Auto-fill with Claude</button>
+              <span class="hint" id="af-hint">Fills only blank fields. You review each value first.</span>
+            </div>
+            <div id="af-out" class="af-out"></div>
+          </div>
           <div id="layout" class="layout"></div>
           <div id="body-wrap" class="field body-field">
             <span id="body-label">Body <em>(Markdown)</em></span>
+            <div id="md-bar" class="md-bar" role="toolbar" aria-label="Markdown formatting"></div>
             <textarea id="f-body" rows="14" spellcheck="true" placeholder="Write in Markdown…"></textarea>
           </div>
           <div id="other" class="other" hidden></div>
@@ -76,6 +98,27 @@
       </form>
     </section>
   </main>
+
+
+  <section id="tags-view" class="tags-view" hidden>
+    <div class="tv-panel">
+      <div class="tv-head">
+        <h2>Tags</h2>
+        <div id="tv-fields" class="seg" role="tablist"></div>
+      </div>
+      <input id="tv-search" class="search" type="search" placeholder="Search tags…" aria-label="Search tags">
+      <div id="tv-filters" class="filters"></div>
+      <div id="tv-notice" class="notice warn" hidden></div>
+      <ul id="tv-list" class="tv-list"></ul>
+    </div>
+  </section>
+
+  <section id="settings-view" class="tags-view" hidden>
+    <div class="tv-panel">
+      <div class="tv-head"><h2>Settings</h2><span id="st-saved" class="small muted"></span></div>
+      <div id="st-body"></div>
+    </div>
+  </section>
 
   <dialog id="confirm">
     <h3>Off with its head?</h3>
@@ -110,11 +153,41 @@
     <label class="field"><span>Commit message <em id="git-msg-count"></em></span>
       <input id="git-msg" type="text" maxlength="100" placeholder="One short sentence">
     </label>
-    <p class="small muted">Commits locally only. Pushing and opening the PR stay in your own terminal.</p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button class="btn btn-primary" id="git-commit" type="button">Commit</button>
+    </div>
+
+    <div class="share">
+      <h4>Share on GitHub</h4>
+      <p id="git-sync" class="small"></p>
+      <div class="share-row">
+        <button class="btn" id="git-fetch" type="button">Check GitHub</button>
+        <button class="btn" id="git-pull" type="button" hidden>Pull updates</button>
+        <button class="btn" id="git-main" type="button" title="After merging a pull request: switch to main and download the merged work">Update from main</button>
+        <button class="btn btn-primary" id="git-push" type="button">Push branch</button>
+        <a class="btn btn-primary" id="git-pr" target="_blank" rel="noopener noreferrer" hidden>Open pull request ↗</a>
+      </div>
+      <p class="small muted">Only feature branches are pushed, never main. Review and merge the pull request on GitHub.</p>
+    </div>
     <div class="actions">
       <span class="spacer"></span>
       <button class="btn" id="git-close" type="button">Close</button>
-      <button class="btn btn-primary" id="git-commit" type="button">Commit</button>
+    </div>
+  </dialog>
+
+  <dialog id="site-dialog" class="wide">
+    <h3>Preview the site locally</h3>
+    <p class="small muted">Runs the site's own Jekyll build from your site folder, so you can check pages before pushing.</p>
+    <p id="site-status" class="site-status"></p>
+    <div id="site-hint" class="notice warn" hidden></div>
+    <pre id="site-log" class="site-log" hidden></pre>
+    <div class="actions">
+      <span class="spacer"></span>
+      <a class="btn" id="site-open" target="_blank" rel="noopener noreferrer" hidden>Open the site ↗</a>
+      <button class="btn btn-danger" id="site-stop" type="button" hidden>Stop</button>
+      <button class="btn btn-primary" id="site-start" type="button">Start preview</button>
+      <button class="btn" id="site-close" type="button">Close</button>
     </div>
   </dialog>
 
