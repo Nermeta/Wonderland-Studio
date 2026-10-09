@@ -682,9 +682,8 @@
     }
     lay.prepend(grid);
     if (isEmblemBadge()) { lay.appendChild(buildArt()); lay.appendChild(buildDisplayCase()); }
-    if (state.cur === 'pages') lay.appendChild(buildNavToggle());
 
-    $('#af-out').innerHTML = ''; $('#af-claude').hidden = !state.claude; $('#af').hidden = state.cur === 'pages';
+    $('#af-out').innerHTML = ''; $('#af-claude').hidden = !state.claude;
     renderStartFrom();
 
     // body
@@ -703,12 +702,11 @@
     }).join('') : '';
 
     // panes
-    const canPreview = state.cur !== 'emblems' && state.cur !== 'pages';
+    const canPreview = state.cur !== 'emblems';
     $('#tab-preview').hidden = !canPreview;
     const d = c.defaults || {};
     $('#layout-note').textContent = state.cur === 'emblems'
       ? 'no page · shown on the Emblems display case'
-      : state.cur === 'pages' ? 'a page of the site · listed in the navigation only if you tick it'
       : [d.layout ? `layout: ${d.layout}` : '', `public by default: ${d.public != null ? d.public : true}`].filter(Boolean).join(' · ');
     setPane('edit');
     refreshChrome();
@@ -821,7 +819,6 @@
         r = await api(`/api/c/${state.cur}`, json('POST', { kind: state.kind, values: state.values, body: state.body, slug: state.newSlug || undefined }));
       }
       const wasNew = !state.slug;
-      await syncNav(r.slug);
       await loadList();
       const d = await api(`/api/c/${state.cur}/${encodeURIComponent(r.slug)}`);
       setDoc({ slug: r.slug, kind: d.kind, values: fromServer(d.kind, d.values), body: d.body, other: d.other, warnings: d.warnings, mtime: d.mtime, file: d.file });
@@ -1068,28 +1065,6 @@
     } catch (e) { toast(e.message, true); }
   }
   $('#start-from').addEventListener('change', e => startFrom(e.target.value));
-
-  // ---------- pages: navigation link ----------
-  function buildNavToggle() {
-    const w = el('div', 'field wide nav-toggle');
-    const lab = el('label', 'st-switch'); const cb = el('input'); cb.type = 'checkbox'; cb.disabled = true;
-    lab.append(cb, el('span', null, 'Show in the navigation bar'));
-    w.append(lab, el('small', 'hint', 'Adds or removes one link line in _includes/nav.html when you save. Without it, the page exists but nothing links to it.'));
-    const href = () => state.values.permalink || `/${state.slug || state.newSlug || ''}/`;
-    state.nav = { was: false, want: false, oldHref: state.slug ? href() : '' };
-    api('/api/nav').then(r => {
-      const hit = state.slug && r.links.some(l => l.href === state.nav.oldHref);
-      state.nav.was = state.nav.want = !!hit; cb.checked = !!hit; cb.disabled = false;
-    }).catch(() => { w.appendChild(el('small', 'hint', 'This site has no _includes/nav.html to edit.')); });
-    cb.addEventListener('change', () => { state.nav.want = cb.checked; });
-    return w;
-  }
-  async function syncNav(slug) {
-    const n = state.nav; if (state.cur !== 'pages' || !n) return;
-    const href = state.values.permalink || `/${slug}/`;
-    if (n.was && (!n.want || n.oldHref !== href)) await api('/api/nav', json('PUT', { href: n.oldHref, show: false }));
-    if (n.want && (!n.was || n.oldHref !== href)) await api('/api/nav', json('PUT', { href, label: state.values.title, show: true }));
-  }
 
   // ---------- Markdown templates ----------
   (function templatesMenu() {

@@ -1,11 +1,11 @@
-/** Site-wide values, navigation links, templates and the pages collection, on a throwaway copy of the site. */
+/** Site-wide values and Markdown templates, on a throwaway copy of the site. */
 const assert = require('assert'), fs = require('fs'), os = require('os'), path = require('path'), http = require('http');
 const SRC = path.resolve(process.env.JEKYLL_REPO || path.join(__dirname, '..', 'site'));
 if (!fs.existsSync(SRC)) { console.error('Repo not found: ' + SRC); process.exit(1); }
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-site-'));
 fs.cpSync(SRC, tmp, { recursive: true, filter: s => !/node_modules|[\\/]\.git([\\/]|$)|vendor|_site/.test(s) });
 process.env.JEKYLL_REPO = tmp; process.env.STUDIO_TEMPLATES = path.join(tmp, 'tpl.json'); process.env.STUDIO_CONFIG = path.join(tmp, 'cfg.json');
-const SC = require('../lib/siteconfig'), Nav = require('../lib/nav'), app = require('../server');
+const SC = require('../lib/siteconfig'), app = require('../server');
 const rd = f => fs.readFileSync(path.join(tmp, f), 'utf8');
 
 // site config: patch only what changed, and restoring gives the identical bytes
@@ -30,33 +30,10 @@ for (const bad of [{ workerUrl: 'http://x.dev' }, { workerUrl: "https://x.dev/'"
   assert.throws(() => SC.write(tmp, bad), /./, 'rejects ' + JSON.stringify(bad));
 }
 
-// navigation: one <li> line added/removed, nothing else touched
-const navBefore = rd('_includes/nav.html');
-assert.ok(Nav.links(tmp).some(l => l.href === '/about/'));
-assert.strictEqual(Nav.add(tmp, '/uses/', 'Uses & Tools'), true);
-assert.strictEqual(Nav.add(tmp, '/uses/', 'Uses'), false, 'no duplicate links');
-assert.ok(rd('_includes/nav.html').includes(`<a href="{{ '/uses/' | relative_url }}" {% if page.url == '/uses/' %}aria-current="page"{% endif %}>Uses &amp; Tools</a>`));
-assert.strictEqual(Nav.remove(tmp, '/uses/'), true);
-assert.strictEqual(rd('_includes/nav.html'), navBefore, 'add then remove restores nav.html exactly');
-assert.throws(() => Nav.add(tmp, 'javascript:alert(1)', 'x'), /cannot be used/);
-
 const srv = app.listen(0, '127.0.0.1', async () => {
   const base = `http://127.0.0.1:${srv.address().port}`;
   const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, headers: { 'content-type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }); const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = t; } return { s: r.status, j }; };
   try {
-    // pages collection: create from an existing page, add to nav, delete removes the link
-    let r = await call('GET', '/api/c/pages'); assert.strictEqual(r.s, 200);
-    assert.ok(r.j.suggestions.layout.includes('page') && r.j.suggestions.layout.includes('about'), 'layouts come from _layouts/');
-    r = await call('POST', '/api/c/pages', { kind: 'default', slug: 'uses', values: { layout: 'page', title: 'Uses', permalink: '/uses/', collection_name: '' }, body: 'Hello.' });
-    assert.strictEqual(r.s, 201, JSON.stringify(r.j));
-    const file = rd('_pages/uses.md');
-    assert.ok(file.startsWith('---\nlayout: page\ntitle: Uses\npermalink: /uses/\n---'), 'site-style front matter: ' + JSON.stringify(file.slice(0, 60)));
-    assert.ok(!/public|type:/.test(file), 'pages get no public/type keys');
-    assert.strictEqual((await call('PUT', '/api/nav', { href: '/uses/', label: 'Uses', show: true })).j.changed, true);
-    assert.ok((await call('GET', '/api/nav')).j.links.some(l => l.href === '/uses/'));
-    r = await call('DELETE', '/api/c/pages/uses'); assert.strictEqual(r.j.navRemoved, true, 'deleting a page removes its nav link');
-    assert.strictEqual(rd('_includes/nav.html'), navBefore);
-    assert.strictEqual((await call('POST', '/api/c/pages', { kind: 'default', slug: 'bad', values: { layout: 'page', title: 'x', permalink: 'no-slash' }, body: '' })).s, 400, 'permalink must start with /');
     // site-config over HTTP + worker test against a local server
     const worker = http.createServer((q, s) => { s.statusCode = 405; s.end(); }).listen(0, '127.0.0.1');
     r = await call('PUT', '/api/site-config', { workerUrl: 'https://example.workers.dev/chat' }); assert.deepStrictEqual(r.j.changed, ['assets/js/chat.js']);

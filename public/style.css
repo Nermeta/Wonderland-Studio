@@ -516,4 +516,3 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 .tpl-row input { flex: 1 1 8rem; min-width: 0; padding: .35rem .5rem; font-size: .85rem; }
 .tpl-row select { width: auto; padding: .35rem .5rem; font-size: .85rem; }
 .tpl-save .hint { display: block; padding: 0 .5rem .4rem; }
-.nav-toggle { margin-top: .4rem; }

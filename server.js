@@ -18,7 +18,6 @@ const { execFile } = require('child_process');
 const FM = require('./lib/frontmatter');
 const { COLLECTIONS } = require('./lib/schemas');
 const Tags = require('./lib/tags');
-const Nav = require('./lib/nav');
 const SiteConfig = require('./lib/siteconfig');
 const Templates = require('./lib/templates').make(process.env.STUDIO_TEMPLATES ? path.resolve(process.env.STUDIO_TEMPLATES) : path.join(__dirname, 'templates.json'));
 
@@ -299,7 +298,7 @@ app.get('/api/schema', (req, res) => {
     repo: REPO,
     repoExists: repoExists(),
     collections: COLLECTIONS.map(c => ({
-      id: c.id, label: c.label, singular: c.singular, glyph: c.glyph, dir: c.dir, datePrefix: !!c.datePrefix, noPublic: !!c.noPublic,
+      id: c.id, label: c.label, singular: c.singular, glyph: c.glyph, dir: c.dir, datePrefix: !!c.datePrefix,
       dirExists: fs.existsSync(colDir(c)),
       defaults: configDefaults(c),
       kinds: Object.fromEntries(Object.entries(c.kinds).map(([k, v]) => [k, { label: v.label, fields: v.fields }]))
@@ -324,11 +323,6 @@ app.get('/api/c/:coll', wrap(async (req, res) => {
       }
       suggestions[fd.key] = [...set].sort((a, b) => a.localeCompare(b));
     }
-  }
-  if (c.id === 'pages') {
-    const ld = path.join(REPO, '_layouts');
-    const names = fs.existsSync(ld) ? fs.readdirSync(ld).filter(f => f.endsWith('.html')).map(f => f.replace(/\.html$/, '')) : [];
-    suggestions.layout = [...new Set([...(suggestions.layout || []), ...names])].sort((a, b) => a.localeCompare(b));
   }
   const skills = c.id === 'chronicles' ? items.filter(i => i.kind === 'skill').map(i => i.slug).sort() : [];
   if (c.id === 'chronicles') { suggestions.requires = skills; }
@@ -431,26 +425,10 @@ app.delete('/api/c/:coll/:slug', wrap(async (req, res) => {
   const c = colOr404(req);
   const file = findFile(c, req.params.slug);
   if (!file) throw httpErr(404, 'Not found.');
-  let navRemoved = false;
-  if (c.id === 'pages') { // a deleted page must not leave a dead link in the navigation
-    try { const d = readDoc(c, req.params.slug).data; navRemoved = Nav.remove(REPO, d.permalink || `/${req.params.slug}/`); } catch { /* unreadable page: leave nav alone */ }
-  }
   fs.mkdirSync(TRASH_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   fs.renameSync(file, path.join(TRASH_DIR, `${stamp}__${c.dir.replace(/^_/, '')}__${path.basename(file)}`));
-  res.json({ ok: true, navRemoved });
-}));
-
-// ---------- navigation ----------
-app.get('/api/nav', wrap(async (req, res) => { needRepo(); res.json({ links: Nav.links(REPO) }); }));
-app.put('/api/nav', wrap(async (req, res) => {
-  needRepo();
-  const href = String((req.body || {}).href || ''), label = String((req.body || {}).label || '').trim();
-  if (!Nav.HREF_OK.test(href)) throw httpErr(400, 'That address cannot be used in the navigation.');
-  let changed;
-  if (req.body.show) { if (!label) throw httpErr(400, 'Give the page a title first.'); changed = Nav.add(REPO, href, label); }
-  else changed = Nav.remove(REPO, href);
-  res.json({ changed, links: Nav.links(REPO) });
+  res.json({ ok: true });
 }));
 
 // ---------- site-wide values (title, URLs, chat worker) ----------

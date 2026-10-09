@@ -27,7 +27,6 @@ The **Content** menu in the header (it shows the collection you're in) lists eve
 | Chronicles | `_learning-logs/` | **Skill** and **Session log** kinds (a session picks its parent from existing skills) |
 | Explorations | `_tutorials/` | New files get the `YYYY-MM-DD-` prefix the existing ones use |
 | Field Notes | `_writeups/` | |
-| Pages | `_pages/` | Site pages (About, Résumé, the index pages). Layout picker from `_layouts/`, permalink, and **Show in the navigation bar** |
 
 **Tags** and **Settings** are separate tabs.
 
@@ -40,10 +39,10 @@ Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` 
 - **✦ Suggest tags** (tags field): scores your existing tags against the entry's title, summary, topic and body, and also offers the entry's own tech stack/tools/genre values. Offline and private. Click a suggestion to add it; dashed ones are new to your vocabulary.
 - **Ask Claude** (optional): appears when an API key is set. It sends the entry's title, summary and body, plus your tag vocabulary, to the Claude API and returns up to 8 tags, reusing your spellings. Set `ANTHROPIC_API_KEY` in your environment (preferred), or `"anthropicApiKey"` in the git-ignored `config.json`. The model defaults to `claude-haiku-5-5`; override with `STUDIO_TAG_MODEL` or `"tagModel"`. It costs API usage per click.
 
-## Pages, templates and starting from an existing entry
+## Templates and starting from an existing entry
 
-- **Pages:** create a page from any existing one. **Start from** (top of every new-entry form, in every collection) copies the other entry's fields and body but not its identity (title, date, permalink, ISBN, summary), so a new page can reuse the About or Résumé layout, or a new tutorial can reuse an older one's tags and structure. Tick **Show in the navigation bar** and saving adds one `<li>` link line to `_includes/nav.html`; deleting a page removes its link. Preview is off for pages (the layouts are the site's own); use **Preview** in the header.
-- **Markdown templates:** the **Templates** menu above the body has built-in skeletons that mirror the headings of your own entries (box writeup, tutorial, deep dive, skill log, study session, book review, certification notes, simple page, checklist, pros and cons, command and output). Pick one to fill an empty body or insert at the cursor. **Save this body as a template** keeps your own, for one collection or all of them, in `templates.json` in the Studio folder (commit it to take it to another computer).
+- **Start from** (top of every new-entry form) copies another entry's fields and body but not its identity (title, date, ISBN, summary), so a new tutorial can reuse an older one's tags and structure.
+- **Markdown templates:** the **Templates** menu above the body has built-in skeletons that mirror the headings of your own entries (box writeup, tutorial, deep dive, skill log, study session, book review, certification notes, checklist, pros and cons, command and output). Pick one to fill an empty body or insert at the cursor. **Save this body as a template** keeps your own, for one collection or all of them, in `templates.json` in the Studio folder (commit it to take it to another computer).
 
 ## Auto-fill and writing
 
@@ -120,4 +119,4 @@ The **Settings** tab edits `config.json` (git-ignored, saved with private permis
 
 ## Not built yet
 
-`_posts/` (only the default "Welcome to Jekyll" post), `_pages/`, `context.json` regeneration, local Jekyll builds, tag rename/merge.
+`_posts/` (only the default "Welcome to Jekyll" post), editing `_pages/` and the navigation (dropped for now), `context.json` regeneration, local Jekyll builds, tag rename/merge.
