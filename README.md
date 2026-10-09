@@ -71,13 +71,18 @@ Saving never rewrites a whole header. Front matter is split into per-key blocks 
 
 `npm test` runs the tag unit tests, then copies your site to a temp folder, does a no-op save on every file, and fails if one byte differs.
 
-## Git (branch + commit only)
+## Git: commit, push, review
 
-The chip in the header shows the current branch and the number of changed files. From it you can create or switch branches, pick files, and commit with a one-line message (max 100 characters).
+The chip in the header shows the current branch, the number of changed files and any commits not pushed (↑2). Open it to create or switch branches, pick files, and commit with a one-line message (max 100 characters). Under **Share on GitHub**:
 
-- Commits on `main`/`master` are refused. Create a feature branch first.
-- It never pushes. Push and open the PR yourself.
-- It does not fetch or pull. Run `git -C site fetch --prune` (or `npm run setup`) before you start.
+- **Check GitHub** runs `git fetch --prune`, so the status below it is current. **Pull updates** appears when your branch is behind and fast-forwards only.
+- **Push branch** pushes the current feature branch to `origin`. It refuses on `main`/`master`, refuses while files are uncommitted, never forces, and tells you to run `gh auth login` if GitHub rejects your sign-in.
+- **Open pull request ↗** opens GitHub's compare page for the branch (or, if the GitHub CLI is signed in and a pull request exists, that pull request). Review and merge it there; the Studio does not merge.
+- Commits on `main`/`master` are refused. Create a feature branch first, and check that your branch includes the newest `main` (the dialog says when it doesn't).
+
+## Preview the site locally
+
+**Preview site** (header) runs `bundle exec jekyll serve` in your site folder and shows its log, then links to `http://127.0.0.1:4000/`. It needs Ruby and Bundler on your computer (`sudo apt install ruby-full build-essential`, then `bundle install` once in `site/`). If something is missing it says what. Stopping the Studio stops the preview.
 
 ## Docker (optional, not yet tested)
 

@@ -822,7 +822,8 @@
     chip.hidden = !g || !g.isRepo;
     if (chip.hidden) return;
     $('#git-branch').textContent = g.branch || 'detached HEAD';
-    $('#git-count').textContent = g.changes.length ? `${g.changes.length} changed` : '';
+    const up = g.remote && g.remote.ahead ? ` ↑${g.remote.ahead}` : '';
+    $('#git-count').textContent = [g.changes.length ? `${g.changes.length} changed` : '', up.trim()].filter(Boolean).join(' · ');
     chip.classList.toggle('warn', g.protected);
     chip.title = g.protected ? `On ${g.branch || 'detached HEAD'} — create a feature branch before committing` : 'Branch and commit';
     if (!$('#git-dialog').open) return;
@@ -850,6 +851,7 @@
       ul.appendChild(li);
     }
     updateCommitBtn();
+    fillShare();
   }
 
   function updateCommitBtn() {
@@ -1094,6 +1096,76 @@
     await gitAction('/api/git/commit', { message: $('#git-msg').value.trim(), paths }, r => `Committed ${r.sha}`);
     $('#git-msg').value = ''; updateCommitBtn();
   });
+
+  // ---------- share on GitHub ----------
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  let prInfo = null;
+  async function fillShare() {
+    const g = state.git; if (!g || !g.remote) return;
+    const r = g.remote, sync = $('#git-sync'), pr = $('#git-pr');
+    const pull = $('#git-pull'), push = $('#git-push');
+    pr.hidden = true; pull.hidden = true;
+    if (!r.web) { sync.textContent = 'This site folder has no GitHub remote called origin.'; push.disabled = true; return; }
+    const notes = [];
+    if (g.protected) {
+      notes.push(r.behind ? `${g.branch} is ${plural(r.behind, 'commit')} behind GitHub. Pull before you start a new branch.` : `${g.branch} matches GitHub as of your last check. Make a feature branch to start editing.`);
+      pull.hidden = !r.behind;
+    } else if (!r.onRemote) {
+      notes.push('This branch is not on GitHub yet. Commit, then push to share it.');
+    } else if (r.ahead) {
+      notes.push(`${plural(r.ahead, 'commit')} not pushed yet.`);
+    } else {
+      notes.push('Everything is pushed.');
+      pull.hidden = !r.behind;
+    }
+    if (!g.protected && r.baseBehind) notes.push(`${r.base} has ${plural(r.baseBehind, 'newer commit')} that this branch does not include yet.`);
+    if (!g.protected && g.changes.length) notes.push(`${plural(g.changes.length, 'file')} not committed.`);
+    sync.textContent = notes.join(' ');
+    push.disabled = g.protected || !!g.changes.length || (r.onRemote && !r.ahead);
+    push.textContent = r.onRemote ? 'Push commits' : 'Push branch';
+    if (!g.protected && r.onRemote && !r.ahead) {
+      const base = r.base || 'main';
+      pr.href = `${r.web}/compare/${encodeURIComponent(base)}...${g.branch.split('/').map(encodeURIComponent).join('/')}?expand=1`;
+      pr.textContent = 'Open pull request ↗'; pr.hidden = false;
+      try {
+        prInfo = (await api('/api/git/pr')).pr;
+        if (prInfo && state.git === g) { pr.href = prInfo.url; pr.textContent = prInfo.state === 'MERGED' ? 'Pull request merged ↗' : `Review pull request #${prInfo.number} ↗`; }
+      } catch { /* the compare link still works */ }
+    }
+  }
+  async function shareAction(btn, path, ok) {
+    const label = btn.textContent; btn.disabled = true; btn.textContent = 'Working…';
+    try {
+      const r = await api(path, json('POST', {}));
+      state.git = r.state || r; toast(ok);
+      await refreshGit(); fillGitDialog();
+    } catch (e) { toast(e.message, true); }
+    finally { btn.textContent = label; fillShare(); }
+  }
+  $('#git-fetch').addEventListener('click', e => shareAction(e.currentTarget, '/api/git/fetch', 'Checked GitHub.'));
+  $('#git-pull').addEventListener('click', e => shareAction(e.currentTarget, '/api/git/pull', 'Pulled the latest.'));
+  $('#git-push').addEventListener('click', e => shareAction(e.currentTarget, '/api/git/push', 'Pushed. Open the pull request to review it.'));
+
+  // ---------- local site preview ----------
+  const sdlg = $('#site-dialog'); let siteTimer = null;
+  function paintSite(s) {
+    const labels = { stopped: 'Not running.', starting: 'Starting… the first build can take a minute.', ready: 'Running.', error: 'It could not start.' };
+    $('#site-status').textContent = labels[s.status] || s.status;
+    $('#site-status').className = 'site-status ' + s.status;
+    $('#site-dot').hidden = s.status !== 'ready';
+    const hint = $('#site-hint'); hint.hidden = !s.hint; hint.textContent = s.hint || '';
+    const log = $('#site-log'); log.hidden = !s.log.length; log.textContent = s.log.join('\n'); log.scrollTop = log.scrollHeight;
+    const open = $('#site-open'); open.hidden = s.status !== 'ready'; open.href = s.url;
+    $('#site-start').hidden = s.status === 'starting' || s.status === 'ready';
+    $('#site-stop').hidden = !(s.status === 'starting' || s.status === 'ready');
+    if (s.status === 'starting' && sdlg.open) { clearTimeout(siteTimer); siteTimer = setTimeout(pollSite, 1500); }
+  }
+  async function pollSite() { try { paintSite(await api('/api/site')); } catch { /* server restarting */ } }
+  $('#site-chip').addEventListener('click', async () => { await pollSite(); sdlg.showModal(); });
+  $('#site-close').addEventListener('click', () => { clearTimeout(siteTimer); sdlg.close(); });
+  $('#site-start').addEventListener('click', async () => { try { paintSite(await api('/api/site/start', json('POST', {}))); } catch (e) { toast(e.message, true); } });
+  $('#site-stop').addEventListener('click', async () => { try { paintSite(await api('/api/site/stop', json('POST', {}))); } catch (e) { toast(e.message, true); } });
+  pollSite();
 
   window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
   document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); $('#form').requestSubmit(); } });

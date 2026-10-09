@@ -149,3 +149,15 @@ assert.ok(s.length <= 8);
   assert.deepStrictEqual(await AF.claudeAutofill({ collLabel: 'x', fields, values: {}, body: '', docs, inventory }, { apiKey: 'k', model: 'm', fetchImpl: bad }), [], 'values outside the allowed options are dropped');
   console.log('autofill tests passed');
 })().catch(e => { console.error(e); process.exit(1); });
+
+// Site preview: a missing Ruby/Bundler is reported with a useful hint
+(async () => {
+  const Site = require('../lib/site');
+  Site.start(process.cwd(), { cmd: 'definitely-not-a-real-command-xyz', args: [] });
+  await new Promise(r => setTimeout(r, 400));
+  const s = Site.status();
+  assert.strictEqual(s.status, 'error');
+  assert.ok(/Ruby and Bundler/.test(s.hint), 'explains how to install Ruby');
+  Site.stop();
+  console.log('site preview tests passed');
+})().catch(e => { console.error(e); process.exit(1); });

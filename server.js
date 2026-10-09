@@ -210,11 +210,37 @@ function normalizeTagFields(kind, clean, orig) {
 
 // ---------- git ----------
 const git = (args) => new Promise((resolve, reject) => {
-  execFile('git', args, { cwd: REPO, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+  execFile('git', args, { cwd: REPO, maxBuffer: 10 * 1024 * 1024, windowsHide: true, timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, stdout, stderr) => {
     if (err) return reject(httpErr(400, (stderr || err.message).trim().split('\n').slice(0, 4).join(' ')));
     resolve(stdout);
   });
 });
+
+/** Where origin is on GitHub, and how this branch compares with origin (from the last fetch). */
+async function remoteInfo(branch) {
+  const out = { web: null, upstream: null, ahead: 0, behind: 0, onRemote: false, baseBehind: 0, base: null };
+  try {
+    const url = (await git(['config', '--get', 'remote.origin.url'])).trim();
+    const m = url.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+    if (m) out.web = `https://github.com/${m[1]}/${m[2]}`;
+  } catch { return out; }
+  if (!branch) return out;
+  try {
+    out.upstream = (await git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${branch}@{u}`])).trim();
+    const [a, b] = (await git(['rev-list', '--left-right', '--count', `${branch}...${out.upstream}`])).trim().split(/\s+/).map(Number);
+    out.ahead = a || 0; out.behind = b || 0;
+  } catch { /* no upstream yet */ }
+  try { await git(['rev-parse', '--verify', '-q', `refs/remotes/origin/${branch}`]); out.onRemote = true; } catch { out.onRemote = false; }
+  for (const base of ['main', 'master']) {
+    try {
+      await git(['rev-parse', '--verify', '-q', `refs/remotes/origin/${base}`]);
+      out.base = base;
+      if (branch !== base) out.baseBehind = Number((await git(['rev-list', '--count', `${branch}..origin/${base}`])).trim()) || 0;
+      break;
+    } catch { /* try next */ }
+  }
+  return out;
+}
 
 async function gitState() {
   try { await git(['rev-parse', '--is-inside-work-tree']); } catch { return { isRepo: false }; }
@@ -230,7 +256,8 @@ async function gitState() {
     changes.push({ path: p, code: code.trim() || '?', label: code === '??' ? 'new' : code.includes('D') ? 'deleted' : code.includes('A') ? 'new' : 'modified' });
   }
   const branches = (await git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'])).split('\n').filter(Boolean);
-  return { isRepo: true, branch, protected: !branch || PROTECTED_BRANCHES.includes(branch), branches, changes };
+  const remote = await remoteInfo(branch);
+  return { isRepo: true, branch, protected: !branch || PROTECTED_BRANCHES.includes(branch), branches, changes, remote };
 }
 
 // ---------- app ----------
@@ -483,7 +510,7 @@ app.post('/api/badges', (req, res) => {
   });
 });
 
-// ---------- git (branch + commit only; never pushes) ----------
+// ---------- git (branches, commits, and pushing feature branches; never main, never forced) ----------
 app.get('/api/git', wrap(async (req, res) => { needRepo(); res.json(await gitState()); }));
 
 app.post('/api/git/branch', wrap(async (req, res) => {
@@ -513,6 +540,55 @@ app.post('/api/git/commit', wrap(async (req, res) => {
   const sha = (await git(['rev-parse', '--short', 'HEAD'])).trim();
   res.json({ sha, state: await gitState() });
 }));
+
+// Sharing: fetch, push the feature branch, fast-forward pull, find the pull request.
+const authHint = m => /Authentication|could not read Username|Permission denied|denied|403/i.test(m)
+  ? m + ' (Sign in once in your terminal with “gh auth login”, then try again.)' : m;
+
+app.post('/api/git/fetch', wrap(async (req, res) => {
+  needRepo();
+  try { await git(['fetch', '--prune', 'origin']); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json(await gitState());
+}));
+
+app.post('/api/git/push', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  if (st.protected) throw httpErr(400, `You're on ${st.branch || 'a detached HEAD'}. Only feature branches are pushed from the Studio.`);
+  if (st.changes.length) throw httpErr(400, `${st.changes.length} file${st.changes.length === 1 ? ' is' : 's are'} not committed yet. Commit them first so the push includes them.`);
+  try { await git(['push', '-u', 'origin', st.branch]); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json({ state: await gitState() });
+}));
+
+app.post('/api/git/pull', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  if (!st.remote.upstream) throw httpErr(400, 'This branch has no remote copy to pull from yet.');
+  if (st.changes.length) throw httpErr(400, 'Commit or discard your changes before pulling.');
+  try { await git(['pull', '--ff-only']); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json({ state: await gitState() });
+}));
+
+// Open pull request for this branch, if the GitHub CLI is signed in. Optional.
+app.get('/api/git/pr', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  let pr = null;
+  if (st.branch && st.remote.onRemote) {
+    pr = await new Promise(resolve => execFile('gh', ['pr', 'list', '--head', st.branch, '--state', 'all', '--json', 'url,state,number', '--limit', '1'],
+      { cwd: REPO, timeout: 8000, windowsHide: true }, (err, out) => {
+        if (err) return resolve(null);
+        try { resolve(JSON.parse(out)[0] || null); } catch { resolve(null); }
+      }));
+  }
+  res.json({ pr });
+}));
+
+// ---------- local site preview (Jekyll) ----------
+const Site = require('./lib/site');
+app.get('/api/site', (req, res) => res.json(Site.status()));
+app.post('/api/site/start', wrap(async (req, res) => { needRepo(); res.json(Site.start(REPO)); }));
+app.post('/api/site/stop', (req, res) => res.json(Site.stop()));
 
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (!err.status) console.error(err);

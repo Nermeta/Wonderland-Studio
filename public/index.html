@@ -19,6 +19,9 @@
     <button id="git-chip" class="git-chip" type="button" hidden title="Branch and commit">
       <span class="git-glyph">⎇</span><span id="git-branch"></span><span id="git-count" class="git-count"></span>
     </button>
+    <button id="site-chip" class="git-chip" type="button" title="Run the website locally to check it">
+      <span class="git-glyph">◐</span><span>Preview site</span><span id="site-dot" class="site-dot" hidden></span>
+    </button>
   </header>
 
   <div id="banner" class="banner" hidden></div>
@@ -134,11 +137,40 @@
     <label class="field"><span>Commit message <em id="git-msg-count"></em></span>
       <input id="git-msg" type="text" maxlength="100" placeholder="One short sentence">
     </label>
-    <p class="small muted">Commits locally only. Pushing and opening the PR stay in your own terminal.</p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button class="btn btn-primary" id="git-commit" type="button">Commit</button>
+    </div>
+
+    <div class="share">
+      <h4>Share on GitHub</h4>
+      <p id="git-sync" class="small"></p>
+      <div class="share-row">
+        <button class="btn" id="git-fetch" type="button">Check GitHub</button>
+        <button class="btn" id="git-pull" type="button" hidden>Pull updates</button>
+        <button class="btn btn-primary" id="git-push" type="button">Push branch</button>
+        <a class="btn btn-primary" id="git-pr" target="_blank" rel="noopener noreferrer" hidden>Open pull request ↗</a>
+      </div>
+      <p class="small muted">Only feature branches are pushed, never main. Review and merge the pull request on GitHub.</p>
+    </div>
     <div class="actions">
       <span class="spacer"></span>
       <button class="btn" id="git-close" type="button">Close</button>
-      <button class="btn btn-primary" id="git-commit" type="button">Commit</button>
+    </div>
+  </dialog>
+
+  <dialog id="site-dialog" class="wide">
+    <h3>Preview the site locally</h3>
+    <p class="small muted">Runs the site's own Jekyll build from your site folder, so you can check pages before pushing.</p>
+    <p id="site-status" class="site-status"></p>
+    <div id="site-hint" class="notice warn" hidden></div>
+    <pre id="site-log" class="site-log" hidden></pre>
+    <div class="actions">
+      <span class="spacer"></span>
+      <a class="btn" id="site-open" target="_blank" rel="noopener noreferrer" hidden>Open the site ↗</a>
+      <button class="btn btn-danger" id="site-stop" type="button" hidden>Stop</button>
+      <button class="btn btn-primary" id="site-start" type="button">Start preview</button>
+      <button class="btn" id="site-close" type="button">Close</button>
     </div>
   </dialog>
 
