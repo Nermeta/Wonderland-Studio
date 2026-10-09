@@ -794,7 +794,9 @@
   }
 
   // ---------- save / revert / delete ----------
+  let saving = false;
   async function save(force) {
+    if (saving) return; // a second click or Ctrl+S while saving must not create a second copy
     const missing = visibleFields().filter(f => f.required && (f.type === 'list' ? !state.values[f.key].length : !String(state.values[f.key] ?? '').trim()));
     document.querySelectorAll('.field.bad').forEach(x => x.classList.remove('bad'));
     if (missing.length) {
@@ -803,7 +805,7 @@
       const focusEl = w && w.querySelector('input,select,textarea,button'); if (focusEl) focusEl.focus();
       return toast(`${missing.map(f => f.label).join(', ')} ${missing.length > 1 ? 'are' : 'is'} required.`, true);
     }
-    const btn = $('#btn-save'); btn.disabled = true;
+    const btn = $('#btn-save'); btn.disabled = true; saving = true;
     try {
       if (state.pendingFile) {
         const fd = new FormData(); fd.append('badge', state.pendingFile);
@@ -827,9 +829,9 @@
       await refreshGit();
     } catch (e) {
       if (e.status === 409 && e.data && e.data.conflict) {
-        if (confirm('This file changed on disk since you opened it (another editor or a git checkout?).\n\nOverwrite it with what you have here?')) { btn.disabled = false; return save(true); }
+        if (confirm('This file changed on disk since you opened it (another editor or a git checkout?).\n\nOverwrite it with what you have here?')) { btn.disabled = false; saving = false; return save(true); }
       } else toast(e.message, true);
-    } finally { btn.disabled = false; }
+    } finally { btn.disabled = false; saving = false; }
   }
 
   // ---------- git ----------

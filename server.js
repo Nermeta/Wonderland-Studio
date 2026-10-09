@@ -379,6 +379,18 @@ app.post('/api/c/:coll', wrap(async (req, res) => {
   if (base && !slugOk(base)) throw httpErr(400, 'Filename may only use letters, numbers, dots, dashes and underscores.');
   if (!base) base = slugify(clean.title);
   if (req.body.slug && findFile(c, base)) throw httpErr(409, `A file named ${base} already exists.`);
+  // Refuse a second copy of the same entry (a double click or double submit) instead of quietly writing title-2.md
+  const sameTitle = String(clean.title || '').trim().toLowerCase();
+  const isbnOf = v => String(v || '').replace(/[^0-9Xx]/g, '').toUpperCase();
+  for (const it of listDocs(c)) {
+    if (it.error) continue;
+    const other = readDoc(c, it.slug);
+    if (!other) continue;
+    if (sameTitle && String(other.data.title || '').trim().toLowerCase() === sameTitle && other.kind === kindName)
+      throw httpErr(409, `"${clean.title}" already exists (${path.basename(other.file)}). Open that entry instead, or give this one a different title.`);
+    if (c.id === 'library' && isbnOf(clean.isbn) && isbnOf(other.data.isbn) === isbnOf(clean.isbn))
+      throw httpErr(409, `A book with ISBN ${clean.isbn} is already in the library ("${other.data.title}", ${path.basename(other.file)}).`);
+  }
   const slug = req.body.slug ? base : uniqueSlug(c, base);
   const body = String(req.body.body || '').replace(/\r\n/g, '\n').trim();
   const text = FM.joinFile({ bom: false, eol: '\n', fm: FM.buildNew(entries, kind.order), rest: body ? `\n${body}\n` : '' });

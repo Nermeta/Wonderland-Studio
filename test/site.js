@@ -56,6 +56,14 @@ const srv = app.listen(0, '127.0.0.1', async () => {
     assert.strictEqual((await call('POST', '/api/templates', { name: 'x', coll: 'nope', body: 'x' })).s, 400);
     assert.strictEqual((await call('DELETE', '/api/templates/' + id)).s, 200);
     assert.strictEqual((await call('DELETE', '/api/templates/../../etc')).s, 404);
+    // a second create of the same entry is refused, not written as title-2.md
+    const mk = { values: { title: 'Dup Guard Book', author: 'A', isbn: '9780441172719' } };
+    const first = await call('POST', '/api/c/library', mk);
+    assert.strictEqual(first.s, 201, JSON.stringify(first.j));
+    assert.strictEqual((await call('POST', '/api/c/library', mk)).s, 409, 'same title twice');
+    assert.strictEqual((await call('POST', '/api/c/library', { values: { title: 'Different', author: 'A', isbn: '978-0-441-17271-9' } })).s, 409, 'same ISBN under another title');
+    assert.ok(!fs.existsSync(path.join(process.env.JEKYLL_REPO, '_book-reviews', 'dup-guard-book-2.md')));
+    await call('DELETE', '/api/c/library/' + first.j.slug);
     console.log('site tests passed');
   } catch (e) { console.error(e); process.exitCode = 1; }
   srv.close(); fs.rmSync(tmp, { recursive: true, force: true }); process.exit(process.exitCode || 0);
