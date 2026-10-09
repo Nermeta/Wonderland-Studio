@@ -90,3 +90,22 @@ assert.ok(s.length <= 8);
   await assert.rejects(() => lookupIsbn({ title: ' ' }, { fetchImpl: fake }), /title first/);
   console.log('isbn tests passed');
 })().catch(e => { console.error(e); process.exit(1); });
+
+// Credential finder (mocked network)
+(async () => {
+  const { findCredential, parseResult } = require('../lib/credential');
+  let body;
+  const fake = async (u, o) => { body = JSON.parse(o.body); return { ok: true, status: 200, json: async () => ({ content: [
+    { type: 'server_tool_use', name: 'web_search' }, { type: 'web_search_tool_result', content: [] },
+    { type: 'text', text: 'Found it.\n{"url":"https://www.comptia.org/certifications/security","issuer":"CompTIA","topic":"Security","skills":["Network Security","DNS","zero trust"],"summary":"Entry-level security cert.","source":"CompTIA Security+","confidence":"high"}' }] }) }; };
+  const r = await findCredential({ title: 'Security+', issuer: '', topics: ['security', 'cloud'], skills: ['DNS', 'network-security'] }, { apiKey: 'k', model: 'm', fetchImpl: fake });
+  assert.strictEqual(body.tools[0].name, 'web_search');
+  assert.strictEqual(r.url, 'https://www.comptia.org/certifications/security');
+  assert.strictEqual(r.topic, 'security', 'matches existing topic spelling');
+  assert.deepStrictEqual(r.skills, ['network-security', 'DNS', 'zero-trust'], 'reuses your spellings');
+  assert.strictEqual(parseResult('{"url":"http://insecure.example","skills":[]}').url, '', 'http links are dropped');
+  assert.strictEqual(parseResult('{"url":"javascript:alert(1)"}').url, '', 'non-http schemes are dropped');
+  await assert.rejects(() => findCredential({ title: '' }, { apiKey: 'k', model: 'm', fetchImpl: fake }), /title first/);
+  await assert.rejects(() => findCredential({ title: 'x' }, { apiKey: '', model: 'm' }), /No Anthropic API key/);
+  console.log('credential tests passed');
+})().catch(e => { console.error(e); process.exit(1); });

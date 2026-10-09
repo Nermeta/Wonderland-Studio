@@ -30,6 +30,7 @@ const REPO = process.env.JEKYLL_REPO
 const HOST = process.env.STUDIO_HOST || '127.0.0.1'; // only change inside a container; publish the port to localhost
 const PORT = Number(process.env.PORT || fileCfg.port || 4747);
 const API_KEY = process.env.ANTHROPIC_API_KEY || fileCfg.anthropicApiKey || '';
+const SEARCH_MODEL = process.env.STUDIO_SEARCH_MODEL || fileCfg.searchModel || process.env.STUDIO_TAG_MODEL || fileCfg.tagModel || 'claude-haiku-5-5';
 const TAG_MODEL = process.env.STUDIO_TAG_MODEL || fileCfg.tagModel || 'claude-haiku-5-5';
 const IMG_DIR = path.join(REPO, 'assets', 'images');
 const BADGE_DIR = path.join(IMG_DIR, 'badges');
@@ -405,15 +406,25 @@ app.post('/api/tags/suggest', wrap(async (req, res) => {
   const v = b.values || {};
   const entry = {
     title: v.title, summary: v.summary, topic: v.topic, body: String(b.body || ''),
-    current: v.tags,
+    current: b.field === 'skills' ? v.skills : v.tags,
     lists: { tech_stack: v.tech_stack, tools: v.tools, genre: v.genre }
   };
   const inv = inventory();
   if (b.mode === 'claude') {
     res.json({ mode: 'claude', suggestions: await Tags.suggestClaude(entry, inv, { apiKey: API_KEY, model: TAG_MODEL }) });
   } else {
-    res.json({ mode: 'local', suggestions: Tags.suggestLocal(entry, inv) });
+    res.json({ mode: 'local', suggestions: Tags.suggestLocal(entry, inv, 8, b.field === 'skills' ? 'skills' : 'tags') });
   }
+}));
+
+// ---------- credential lookup (Claude + web search) ----------
+app.post('/api/credential/find', wrap(async (req, res) => {
+  const b = req.body || {};
+  const inv = inventory();
+  const topics = Array.isArray(b.topics) ? b.topics.map(String).slice(0, 100) : [];
+  res.json({ result: await require('./lib/credential').findCredential(
+    { title: b.title, issuer: b.issuer, topics, skills: inv.skills.tags.map(t => t.tag) },
+    { apiKey: API_KEY, model: SEARCH_MODEL }) });
 }));
 
 // ---------- ISBN lookup (Open Library) ----------

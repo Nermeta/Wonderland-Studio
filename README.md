@@ -42,6 +42,10 @@ Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` 
 
 The site's deploy workflow downloads covers from Open Library and caches them, so a fresh clone often has no `assets/images/covers/` files. The Studio therefore shows the local file when there is one and otherwise loads the cover straight from Open Library in your browser (the ISBN is sent to openlibrary.org). **Look up ISBN** (Library form) searches Open Library with the title and author you typed. Pick a result to set the ISBN and fill in any empty author, page count, genre and topic. Genre and topic only use values you already have (plus fiction/nonfiction, inferred from Open Library's subjects), so a genre you have never used is not added automatically. Both need internet access.
 
+## Credential links (Emblems)
+
+Under **Credential link** there are two buttons. **Search the web** opens a DuckDuckGo search for the title, issuer and "certification" in a new tab; it needs no key and sends nothing from the Studio. **Find with Claude** (needs an API key) has Claude search the web for the issuer's official page and suggest the link, issuer, topic and skills. Review the card, then **Use these** fills the link and any empty issuer, topic and skills, reusing your existing spellings. Only `https` links are accepted. It uses Claude's web search tool, so it costs more than a tag suggestion; the model comes from `STUDIO_SEARCH_MODEL`/`"searchModel"` (default: the tag model). **Suggest skills** on the Skills field matches your existing skills against the title and description, offline.
+
 ## It only changes what you change
 
 Saving never rewrites a whole header. Front matter is split into per-key blocks and **only keys whose value changed** are rewritten; everything else is kept byte-for-byte (comments, quoting, key order, date style, line endings, keys the editor doesn't manage). A no-op save writes nothing.

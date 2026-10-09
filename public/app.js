@@ -306,8 +306,54 @@
     input.addEventListener('input', () => { state.values[f.key] = input.value; afterChange(f.key); });
     w.appendChild(input);
     if (f.type === 'combo' && optionsFor(f).length) attachDropdown(w, input, f, { clear: false, pick: v => { input.value = v; state.values[f.key] = v; afterChange(f.key); } });
+    if (f.key === 'cert_url' && state.cur === 'emblems') w.appendChild(buildCredentialFinder(input));
     if (f.key === 'isbn' && state.cur === 'library') w.appendChild(buildIsbnLookup(w, input));
     return addHint(w, f);
+  }
+
+  function buildCredentialFinder(input) {
+    const box = el('div', 'suggest');
+    const bar = el('div', 'suggest-bar');
+    const out = el('div', 'sugg-list');
+    const web = el('a', 'btn-mini', 'Search the web ↗'); web.target = '_blank'; web.rel = 'noopener noreferrer';
+    web.title = 'Opens a web search in a new tab. Nothing is sent from the Studio.';
+    const q = () => [state.values.title, state.values.issuer, 'certification'].filter(Boolean).join(' ');
+    web.addEventListener('click', () => { web.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q()); });
+    web.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q());
+    bar.appendChild(web);
+    if (state.claude) {
+      const ai = el('button', 'btn-mini claude', 'Find with Claude'); ai.type = 'button';
+      ai.title = 'Claude searches the web for the official page and suggests the issuer, topic and skills. Uses your API key.';
+      ai.addEventListener('click', async () => {
+        if (!String(state.values.title || '').trim()) { toast('Enter a title first.', true); return; }
+        const label = ai.textContent; ai.disabled = true; ai.textContent = 'Searching…'; out.innerHTML = '';
+        try {
+          const { result: r } = await api('/api/credential/find', json('POST', { title: state.values.title, issuer: state.values.issuer || '', topics: state.meta.suggestions.topic || [] }));
+          const card = el('div', 'find-card');
+          card.innerHTML = r.url
+            ? `<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.url)}</a><small>${esc(r.source || '')} · ${esc(r.confidence)} confidence</small>`
+            : '<small>No official page found. Try the web search.</small>';
+          if (r.summary) card.appendChild(el('p', 'small muted', esc(r.summary)));
+          const use = el('button', 'btn-mini', 'Use these'); use.type = 'button';
+          use.addEventListener('click', () => {
+            const setText = (key, val) => {
+              if (!val || (key !== 'cert_url' && String(state.values[key] ?? '').trim())) return;
+              state.values[key] = val; const inp = document.querySelector(`[data-key="${key}"] input`); if (inp) inp.value = val; afterChange(key);
+            };
+            setText('cert_url', r.url); setText('issuer', r.issuer); setText('topic', r.topic);
+            const sw = document.querySelector('[data-key="skills"]');
+            if (sw && sw._add) r.skills.forEach(s => sw._add(s));
+            card.remove(); toast('Filled in. Empty fields only; the link is replaced.');
+          });
+          if (r.url || r.skills.length) card.appendChild(use);
+          out.appendChild(card);
+        } catch (e) { toast(e.message, true); }
+        finally { ai.disabled = false; ai.textContent = label; }
+      });
+      bar.appendChild(ai);
+    }
+    box.append(bar, out);
+    return box;
   }
 
   function buildIsbnLookup(w, input) {
@@ -447,19 +493,21 @@
     w.appendChild(box);
     w._add = add;
     addHint(w, f);
-    if (f.key === 'tags') w.appendChild(buildSuggest(w));
+    if (f.key === 'tags') w.appendChild(buildSuggest(w, 'tags'));
+    if (f.key === 'skills' && state.cur === 'emblems') w.appendChild(buildSuggest(w, 'skills'));
     return w;
   }
 
-  function buildSuggest(w) {
+  function buildSuggest(w, field = 'tags') {
     const wrap = el('div', 'suggest');
     const bar = el('div', 'suggest-bar');
     const list = el('div', 'sugg-list');
     const local = el('button', 'btn-mini', '✦ Suggest tags'); local.type = 'button';
-    local.title = 'Matches your existing tags against this entry. Nothing leaves your machine.';
+    local.title = `Matches your existing ${field} against this entry. Nothing leaves your machine.`;
+    if (field === 'skills') local.textContent = '✦ Suggest skills';
     bar.appendChild(local);
-    local.addEventListener('click', () => runSuggest('local', local, list, w));
-    if (state.claude) {
+    local.addEventListener('click', () => runSuggest('local', local, list, w, field));
+    if (state.claude && field === 'tags') {
       const ai = el('button', 'btn-mini claude', 'Ask Claude'); ai.type = 'button';
       ai.title = "Sends this entry's title, summary and body to the Claude API.";
       ai.addEventListener('click', () => runSuggest('claude', ai, list, w));
@@ -469,13 +517,13 @@
     return wrap;
   }
 
-  async function runSuggest(mode, btn, listEl, w) {
+  async function runSuggest(mode, btn, listEl, w, field = 'tags') {
     const label = btn.textContent;
     btn.disabled = true; btn.textContent = mode === 'claude' ? 'Asking Claude…' : 'Thinking…';
     try {
-      const r = await api('/api/tags/suggest', json('POST', { mode, values: state.values, body: state.body }));
+      const r = await api('/api/tags/suggest', json('POST', { mode, field, values: state.values, body: state.body }));
       listEl.innerHTML = '';
-      if (!r.suggestions.length) { listEl.appendChild(el('span', 'hint', 'No confident matches. Add tags by hand' + (state.claude && mode === 'local' ? ' or try Ask Claude.' : '.'))); return; }
+      if (!r.suggestions.length) { listEl.appendChild(el('span', 'hint', (field === 'skills' ? 'None of your existing skills match. Add skills by hand' + (state.claude ? ' or use Find with Claude above.' : '.') : 'No confident matches. Add tags by hand' + (state.claude && mode === 'local' ? ' or try Ask Claude.' : '.')))); return; }
       if (mode === 'claude') listEl.appendChild(el('span', 'sugg-note', 'Suggested by Claude. Dashed tags are new to your vocabulary.'));
       for (const s of r.suggestions) {
         const b = el('button', 'sugg' + (s.isNew ? ' new' : ''), `${esc(s.tag)}${s.reason ? `<small>${esc(s.reason)}</small>` : ''}`);
