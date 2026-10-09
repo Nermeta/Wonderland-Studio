@@ -416,6 +416,11 @@ app.post('/api/tags/suggest', wrap(async (req, res) => {
   }
 }));
 
+// ---------- ISBN lookup (Open Library) ----------
+app.get('/api/isbn', wrap(async (req, res) => {
+  res.json({ results: await require('./lib/isbn').lookupIsbn({ title: req.query.title, author: req.query.author }) });
+}));
+
 // ---------- markdown preview ----------
 app.post('/api/render', (req, res) => {
   const md = String(req.body.markdown || '').slice(0, 500000);

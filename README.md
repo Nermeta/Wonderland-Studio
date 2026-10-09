@@ -21,7 +21,7 @@ One tab per collection, named like the site nav:
 
 | Tab | Directory | Notes |
 | --- | --- | --- |
-| Library | `_book-reviews/` | Cover preview from `assets/images/covers/<isbn>.jpg` when present |
+| Library | `_book-reviews/` | Cover preview (local `assets/images/covers/<isbn>.jpg`, else Open Library by ISBN) and a **Look up ISBN** button that searches Open Library by title and author |
 | Emblems | `_certifications/` | **Certification** (badge art, shape picker with live display-case preview) and **Education** kinds |
 | Discoveries | `_deep-dives/` | |
 | Chronicles | `_learning-logs/` | **Skill** and **Session log** kinds (a session picks its parent from existing skills) |
@@ -37,6 +37,10 @@ Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` 
 - **Normalize on save:** a tag you add takes the spelling already used most often (type `DNS`, get `dns`). Tags already on an entry are never rewritten.
 - **✦ Suggest tags** (tags field): scores your existing tags against the entry's title, summary, topic and body, and also offers the entry's own tech stack/tools/genre values. Offline and private. Click a suggestion to add it; dashed ones are new to your vocabulary.
 - **Ask Claude** (optional): appears when an API key is set. It sends the entry's title, summary and body, plus your tag vocabulary, to the Claude API and returns up to 8 tags, reusing your spellings. Set `ANTHROPIC_API_KEY` in your environment (preferred), or `"anthropicApiKey"` in the git-ignored `config.json`. The model defaults to `claude-haiku-5-5`; override with `STUDIO_TAG_MODEL` or `"tagModel"`. It costs API usage per click.
+
+## Covers and ISBN lookup
+
+The site's deploy workflow downloads covers from Open Library and caches them, so a fresh clone often has no `assets/images/covers/` files. The Studio therefore shows the local file when there is one and otherwise loads the cover straight from Open Library in your browser (the ISBN is sent to openlibrary.org). **Look up ISBN** (Library form) searches Open Library with the title and author you typed. Pick a result to set the ISBN and fill in an empty author or page count. Both need internet access.
 
 ## It only changes what you change
 

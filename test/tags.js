@@ -70,3 +70,19 @@ assert.ok(s.length <= 8);
   await assert.rejects(() => T.suggestClaude({}, inv, { apiKey: 'k', model: 'm', fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'no json here' }] }) }) }), /no JSON/);
   console.log('tag tests passed');
 })().catch(e => { console.error(e); process.exit(1); });
+
+// ISBN lookup (mocked network)
+(async () => {
+  const { lookupIsbn } = require('../lib/isbn');
+  let url;
+  const fake = async u => { url = u; return { ok: true, status: 200, json: async () => ({ docs: [
+    { title: 'Piranesi', author_name: ['Susanna Clarke'], isbn: ['1635575630', '9781635575637'], first_publish_year: 2020, number_of_pages_median: 272 },
+    { title: 'Piranesi', author_name: ['Susanna Clarke'], isbn: ['9781635575637'] },
+    { title: 'No isbn', isbn: [] }] }) }; };
+  const r = await lookupIsbn({ title: 'Piranesi', author: 'Clarke' }, { fetchImpl: fake });
+  assert.ok(url.includes('title=Piranesi') && url.includes('author=Clarke'));
+  assert.deepStrictEqual(r.map(x => x.isbn), ['9781635575637'], 'prefers ISBN-13, de-duplicates, drops entries without one');
+  assert.strictEqual(r[0].pages, 272);
+  await assert.rejects(() => lookupIsbn({ title: ' ' }, { fetchImpl: fake }), /title first/);
+  console.log('isbn tests passed');
+})().catch(e => { console.error(e); process.exit(1); });

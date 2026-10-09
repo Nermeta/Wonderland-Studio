@@ -20,6 +20,17 @@
   const base = p => String(p || '').split('/').pop();
   const mediaUrl = p => (p ? String(p).replace(/^\/assets\/images\//, '/media/') : '');
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+  /** Show a cover: the local cached file if there is one, else Open Library (what the site build fetches). */
+  function paintCover(node, isbn, file, emptyText) {
+    const clean = String(isbn || '').replace(/[^0-9Xx]/g, '');
+    node.style.backgroundImage = ''; node.textContent = emptyText;
+    const url = file ? `/media/covers/${encodeURIComponent(file)}`
+      : clean ? `https://covers.openlibrary.org/b/isbn/${clean}-M.jpg?default=false` : '';
+    if (!url) return;
+    const probe = new Image();
+    probe.onload = () => { if (probe.naturalWidth > 1 && node.isConnected) { node.style.backgroundImage = `url("${url}")`; node.textContent = ''; } };
+    probe.src = url;
+  }
   const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
 
@@ -165,7 +176,7 @@
       if (state.cur === 'library') {
         const cv = el('div', 'cover-thumb', '❦');
         const file = state.meta.covers.find(c => c.replace(/\.\w+$/, '') === it.isbn);
-        if (file) { cv.style.backgroundImage = `url("/media/covers/${encodeURIComponent(file)}")`; cv.textContent = ''; }
+        paintCover(cv, it.isbn, file, '❦');
         li.appendChild(cv);
       }
       const txt = el('div');
@@ -260,7 +271,45 @@
     input.value = state.values[f.key] ?? '';
     input.addEventListener('input', () => { state.values[f.key] = input.value; afterChange(f.key); });
     w.appendChild(input);
+    if (f.key === 'isbn' && state.cur === 'library') w.appendChild(buildIsbnLookup(w, input));
     return addHint(w, f);
+  }
+
+  function buildIsbnLookup(w, input) {
+    const box = el('div', 'suggest');
+    const bar = el('div', 'suggest-bar');
+    const btn = el('button', 'btn-mini', 'Look up ISBN'); btn.type = 'button';
+    btn.title = 'Searches Open Library by this entry’s title and author.';
+    const list = el('div', 'sugg-list');
+    bar.appendChild(btn); box.append(bar, list);
+    const fill = (key, val) => {
+      if (val == null || val === '' || String(state.values[key] ?? '').trim()) return;
+      state.values[key] = val;
+      const inp = document.querySelector(`[data-key="${key}"] input`);
+      if (inp) inp.value = val;
+      afterChange(key);
+    };
+    btn.addEventListener('click', async () => {
+      const label = btn.textContent; btn.disabled = true; btn.textContent = 'Searching…';
+      try {
+        const q = new URLSearchParams({ title: state.values.title || '', author: state.values.author || '' });
+        const r = await api('/api/isbn?' + q);
+        list.innerHTML = '';
+        if (!r.results.length) { list.appendChild(el('span', 'hint', 'No match. Check the title and author spelling, or type the ISBN by hand.')); return; }
+        for (const m of r.results) {
+          const b = el('button', 'sugg', `${esc(m.title)}<small>${esc([m.author, m.year, m.pages ? m.pages + ' pp' : '', m.isbn].filter(Boolean).join(' · '))}</small>`);
+          b.type = 'button';
+          b.addEventListener('click', () => {
+            state.values.isbn = m.isbn; input.value = m.isbn; afterChange('isbn');
+            fill('author', m.author); fill('pages', m.pages);
+            list.innerHTML = ''; toast('ISBN set. Empty author and pages were filled in too.');
+          });
+          list.appendChild(b);
+        }
+      } catch (e) { toast(e.message, true); }
+      finally { btn.disabled = false; btn.textContent = label; }
+    });
+    return box;
   }
 
   function buildLong(f) {
@@ -577,12 +626,9 @@
       const isbn = String(state.values.isbn || '').replace(/[^0-9Xx]/g, '');
       const file = state.meta.covers.find(c => c.replace(/\.\w+$/, '') === isbn);
       const big = $('#cover-big');
-      if (big) {
-        big.style.backgroundImage = file ? `url("/media/covers/${encodeURIComponent(file)}")` : '';
-        big.textContent = file ? '' : 'no cover yet';
-      }
+      if (big) paintCover(big, isbn, file, 'no cover yet');
       const hint = $('#cover-hint');
-      if (hint) hint.textContent = file ? `assets/images/covers/${file}` : (isbn ? `Will be fetched for ${isbn} by fetch-covers.js on the next build.` : 'Add an ISBN and the cover is fetched on the next build.');
+      if (hint) hint.textContent = file ? `assets/images/covers/${file}` : (isbn ? `Preview from Open Library. The site build caches it for ${isbn}.` : 'Add an ISBN and the cover is fetched on the next build.');
     }
   }
 
