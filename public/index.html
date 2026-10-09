@@ -16,12 +16,14 @@
       <p class="tagline">The curator's workroom, behind the display case</p>
     </div>
     <nav id="tabs" class="tabs" aria-label="Collections"></nav>
+    <div class="header-actions">
     <button id="git-chip" class="git-chip" type="button" hidden title="Branch and commit">
       <span class="git-glyph">⎇</span><span id="git-branch"></span><span id="git-count" class="git-count"></span>
     </button>
     <button id="site-chip" class="git-chip" type="button" title="Run the website locally to check it">
-      <span class="git-glyph">◐</span><span>Preview site</span><span id="site-dot" class="site-dot" hidden></span>
+      <span class="git-glyph">◐</span><span>Preview</span><span id="site-dot" class="site-dot" hidden></span>
     </button>
+    </div>
   </header>
 
   <div id="banner" class="banner" hidden></div>
@@ -101,6 +103,13 @@
       <div id="tv-filters" class="filters"></div>
       <div id="tv-notice" class="notice warn" hidden></div>
       <ul id="tv-list" class="tv-list"></ul>
+    </div>
+  </section>
+
+  <section id="settings-view" class="tags-view" hidden>
+    <div class="tv-panel">
+      <div class="tv-head"><h2>Settings</h2><span id="st-saved" class="small muted"></span></div>
+      <div id="st-body"></div>
     </div>
   </section>
 

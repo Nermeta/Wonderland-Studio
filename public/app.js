@@ -25,7 +25,7 @@
     const clean = String(isbn || '').replace(/[^0-9Xx]/g, '');
     node.style.backgroundImage = ''; node.textContent = emptyText;
     const url = file ? `/media/covers/${encodeURIComponent(file)}`
-      : clean ? `https://covers.openlibrary.org/b/isbn/${clean}-M.jpg?default=false` : '';
+      : clean && !(state.settings && state.settings.onlineCovers === false) ? `https://covers.openlibrary.org/b/isbn/${clean}-M.jpg?default=false` : '';
     if (!url) return;
     const probe = new Image();
     probe.onload = () => { if (probe.naturalWidth > 1 && node.isConnected) { node.style.backgroundImage = `url("${url}")`; node.textContent = ''; } };
@@ -97,11 +97,15 @@
     tb.type = 'button';
     tb.addEventListener('click', openTags);
     nav.appendChild(tb);
+    const sb = el('button', 'tab' + (state.view === 'settings' ? ' active' : ''), 'Settings');
+    sb.type = 'button';
+    sb.addEventListener('click', openSettings);
+    nav.appendChild(sb);
   }
 
   async function selectCollection(id) {
-    if ((id !== state.cur || state.view === 'tags') && !guard()) return;
-    state.view = 'edit'; $('.workroom').hidden = false; $('#tags-view').hidden = true;
+    if ((id !== state.cur || state.view !== 'edit') && !guard()) return;
+    state.view = 'edit'; $('.workroom').hidden = false; $('#tags-view').hidden = true; $('#settings-view').hidden = true;
     state.cur = id;
     store.set('ws.cur', id);
     history.replaceState(null, '', '#' + id);
@@ -837,7 +841,7 @@
     warn.textContent = g.protected ? `You're on ${g.branch || 'a detached HEAD'}. Create or switch to a feature branch, then commit.` : '';
     const sel = $('#git-branches');
     sel.innerHTML = g.branches.map(b => `<option${b === g.branch ? ' selected' : ''}>${esc(b)}</option>`).join('');
-    if (!$('#git-newbranch').value) $('#git-newbranch').value = `studio/${today()}`;
+    if (!$('#git-newbranch').value) $('#git-newbranch').value = `${state.settings ? state.settings.branchPrefix : 'studio/'}${today()}`;
     const ul = $('#git-files');
     const checked = new Set([...ul.querySelectorAll('input:checked')].map(i => i.value));
     const first = !ul.children.length || ul.querySelector('.none');
@@ -876,9 +880,9 @@
   const TV_NAMES = { tags: 'Tags', tech_stack: 'Tech stack', tools: 'Tools', genre: 'Genre', skills: 'Skills' };
 
   async function openTags() {
-    if (state.view !== 'tags' && !guard()) return;
+    if (state.view === 'edit' && !guard()) return;
     state.view = 'tags';
-    $('.workroom').hidden = true; $('#tags-view').hidden = false;
+    $('.workroom').hidden = true; $('#tags-view').hidden = false; $('#settings-view').hidden = true;
     history.replaceState(null, '', '#tags');
     renderTabs();
     await loadVocab();
@@ -1097,6 +1101,100 @@
     $('#git-msg').value = ''; updateCommitBtn();
   });
 
+
+  // ---------- settings ----------
+  async function loadSettings() {
+    try { state.settings = await api('/api/settings'); } catch { state.settings = state.settings || null; }
+    return state.settings;
+  }
+
+  async function openSettings() {
+    if (state.view === 'edit' && !guard()) return;
+    state.view = 'settings';
+    $('.workroom').hidden = true; $('#tags-view').hidden = true; $('#settings-view').hidden = false;
+    history.replaceState(null, '', '#settings');
+    renderTabs();
+    await loadSettings();
+    renderSettings();
+  }
+
+  function renderSettings() {
+    const s = state.settings, root = $('#st-body'); root.innerHTML = '';
+    if (!s) { root.appendChild(el('p', 'hint', 'Could not load settings.')); return; }
+    const group = (title, note) => { const g = el('section', 'st-group'); g.appendChild(el('h3', null, esc(title))); if (note) g.appendChild(el('p', 'small muted', note)); root.appendChild(g); return g; };
+    const row = (g, label, control, help) => {
+      const r = el('div', 'st-row'); r.appendChild(el('span', 'st-label', esc(label)));
+      const c = el('div', 'st-control'); c.appendChild(control); if (help) c.appendChild(el('small', 'hint', help)); r.appendChild(c); g.appendChild(r); return r;
+    };
+    const input = (type, value, ph) => { const i = el('input'); i.type = type; i.value = value ?? ''; if (ph) i.placeholder = ph; i.autocomplete = 'off'; i.spellcheck = false; return i; };
+    const save = async (patch, msg) => {
+      try { state.settings = await api('/api/settings', json('PUT', patch)); toast(msg || 'Saved.'); $('#st-saved').textContent = 'Saved to config.json'; await loadVocab(); renderSettings(); }
+      catch (e) { toast(e.message, true); }
+    };
+    const srcNote = src => src === 'environment' ? ' It is set by an environment variable, which overrides this page.' : '';
+
+    // Claude
+    const g1 = group('Claude', 'Optional. Powers “Ask Claude”, “Auto-fill with Claude” and “Find with Claude”. Without a key, everything else still works.');
+    const keyIn = input('password', '', s.apiKey.set ? 'Saved. Paste a new key to replace it' : 'sk-ant-…');
+    keyIn.setAttribute('data-1p-ignore', ''); keyIn.setAttribute('data-lpignore', 'true');
+    const keyBox = el('div', 'st-inline'); keyBox.appendChild(keyIn);
+    const saveKey = el('button', 'btn', 'Save key'); saveKey.type = 'button';
+    saveKey.addEventListener('click', () => { if (!keyIn.value.trim()) return toast('Paste a key first.', true); save({ anthropicApiKey: keyIn.value.trim() }, 'API key saved.'); });
+    const testKey = el('button', 'btn', 'Test'); testKey.type = 'button';
+    testKey.addEventListener('click', async () => {
+      testKey.disabled = true; testKey.textContent = 'Testing…';
+      try { const r = await api('/api/settings/test-key', json('POST', { anthropicApiKey: keyIn.value.trim() })); toast(`Key works. ${r.models.length} models available.`); }
+      catch (e) { toast(e.message, true); } finally { testKey.disabled = false; testKey.textContent = 'Test'; }
+    });
+    keyBox.append(saveKey, testKey);
+    if (s.apiKey.source === 'config') { const rm = el('button', 'btn btn-danger', 'Remove'); rm.type = 'button'; rm.addEventListener('click', () => save({ anthropicApiKey: '' }, 'API key removed.')); keyBox.appendChild(rm); }
+    row(g1, 'API key', keyBox, s.apiKey.set
+      ? `In use: key ending …${s.apiKey.tail} (${s.apiKey.source === 'environment' ? 'from the ANTHROPIC_API_KEY environment variable' : 'saved in config.json'}). It is never shown again or sent to the browser.`
+      : 'Not set. A key saved here goes in config.json, which is git-ignored. An ANTHROPIC_API_KEY environment variable is safer on shared computers.');
+    const model = (key, label, help) => {
+      const i = input('text', s[key].source === 'default' ? '' : s[key].value, s[key].source === 'default' ? s[key].default : s[key].value);
+      const b = el('div', 'st-inline'); b.appendChild(i);
+      const sv = el('button', 'btn', 'Save'); sv.type = 'button'; sv.addEventListener('click', () => save({ [key]: i.value.trim() }, 'Model saved.'));
+      b.appendChild(sv); if (s[key].source === 'environment') i.disabled = sv.disabled = true;
+      row(g1, label, b, help + srcNote(s[key].source));
+    };
+    model('tagModel', 'Model', 'Used for tag suggestions and auto-fill. Blank uses the default.');
+    model('searchModel', 'Web-search model', 'Used when finding a credential link. Blank uses the model above.');
+
+    // Writing & lookups
+    const g2 = group('Lookups', 'Where the Studio talks to the internet besides Claude.');
+    const cov = el('label', 'st-switch'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = s.onlineCovers;
+    cb.addEventListener('change', () => save({ onlineCovers: cb.checked }, cb.checked ? 'Online covers on.' : 'Online covers off.'));
+    cov.append(cb, el('span', null, 'Show book covers from Open Library'));
+    row(g2, 'Covers', cov, 'Your browser loads a cover by ISBN when none is cached in the site folder. Turn off to stay fully offline. ISBN lookup still works when you click it.');
+
+    // Git & preview
+    const g3 = group('Git and preview');
+    const pre = input('text', s.branchPrefix, 'studio/'); pre.className = 'short';
+    const pb = el('div', 'st-inline'); pb.appendChild(pre);
+    const psv = el('button', 'btn', 'Save'); psv.type = 'button'; psv.addEventListener('click', () => save({ branchPrefix: pre.value }, 'Branch prefix saved.'));
+    pb.appendChild(psv);
+    row(g3, 'Branch prefix', pb, 'New branches start as this plus today’s date, for example studio/2026-10-09.');
+    const port = input('number', s.previewPort); port.className = 'short'; port.min = 1024; port.max = 65535;
+    const ptb = el('div', 'st-inline'); ptb.appendChild(port);
+    const ptsv = el('button', 'btn', 'Save'); ptsv.type = 'button'; ptsv.addEventListener('click', () => save({ previewPort: port.value }, 'Preview port saved.'));
+    ptb.appendChild(ptsv);
+    row(g3, 'Preview port', ptb, 'Where “Preview” serves the site. Applies the next time you start it.');
+
+    // About
+    const g4 = group('About this install');
+    const i = s.info;
+    const dl = el('dl', 'st-about');
+    const add = (k, v) => { dl.appendChild(el('dt', null, esc(k))); dl.appendChild(el('dd', null, `<code>${esc(v)}</code>`)); };
+    add('Studio', `v${i.version} on Node ${i.node}`);
+    add('Address', `http://localhost:${i.port}${i.host !== '127.0.0.1' ? ` (bound to ${i.host})` : ''}`);
+    add('Site folder', i.repo + (i.repoExists ? '' : '  (not found; run npm run setup)'));
+    add('Site source', i.siteRemote);
+    add('Settings file', i.configFile);
+    g4.appendChild(dl);
+    g4.appendChild(el('p', 'small muted', 'The site folder and Studio port are set in config.json (or JEKYLL_REPO and PORT) and need a restart to change.'));
+  }
+
   // ---------- share on GitHub ----------
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   let prInfo = null;
@@ -1174,6 +1272,7 @@
   (async function init() {
     try {
       state.schema = await api('/api/schema');
+      await loadSettings();
       if (!state.schema.repoExists) {
         const b = $('#banner'); b.hidden = false;
         b.innerHTML = `The Jekyll repo wasn't found at <code>${esc(state.schema.repo)}</code>. Set <code>JEKYLL_REPO</code> or copy <code>config.example.json</code> to <code>config.json</code>, then restart.`;
@@ -1188,6 +1287,7 @@
       openNew();
       refreshGit();
       if (want === 'tags') await openTags();
+      if (want === 'settings') await openSettings();
     } catch (e) { toast(e.message, true); }
   })();
 })();

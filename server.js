@@ -20,8 +20,9 @@ const { COLLECTIONS } = require('./lib/schemas');
 const Tags = require('./lib/tags');
 
 // ---------- config ----------
+const CONFIG_FILE = process.env.STUDIO_CONFIG ? path.resolve(process.env.STUDIO_CONFIG) : path.join(__dirname, 'config.json');
 let fileCfg = {};
-try { fileCfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8')); } catch { /* optional */ }
+try { fileCfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* optional */ }
 
 // Relative paths in config.json resolve against this folder, so "./site" travels with the Studio.
 const REPO = process.env.JEKYLL_REPO
@@ -29,9 +30,14 @@ const REPO = process.env.JEKYLL_REPO
   : path.resolve(__dirname, fileCfg.repo || 'site');
 const HOST = process.env.STUDIO_HOST || '127.0.0.1'; // only change inside a container; publish the port to localhost
 const PORT = Number(process.env.PORT || fileCfg.port || 4747);
-const API_KEY = process.env.ANTHROPIC_API_KEY || fileCfg.anthropicApiKey || '';
-const SEARCH_MODEL = process.env.STUDIO_SEARCH_MODEL || fileCfg.searchModel || process.env.STUDIO_TAG_MODEL || fileCfg.tagModel || 'claude-haiku-5-5';
-const TAG_MODEL = process.env.STUDIO_TAG_MODEL || fileCfg.tagModel || 'claude-haiku-5-5';
+const DEFAULT_MODEL = 'claude-haiku-5-5';
+// Settings can be changed in the Settings tab (saved to config.json); environment variables win.
+const apiKey = () => process.env.ANTHROPIC_API_KEY || fileCfg.anthropicApiKey || '';
+const tagModel = () => process.env.STUDIO_TAG_MODEL || fileCfg.tagModel || DEFAULT_MODEL;
+const searchModel = () => process.env.STUDIO_SEARCH_MODEL || fileCfg.searchModel || tagModel();
+const previewPort = () => Number(fileCfg.previewPort) || 4000;
+const onlineCovers = () => fileCfg.onlineCovers !== false;
+const branchPrefix = () => (typeof fileCfg.branchPrefix === 'string' ? fileCfg.branchPrefix : 'studio/');
 const IMG_DIR = path.join(REPO, 'assets', 'images');
 const BADGE_DIR = path.join(IMG_DIR, 'badges');
 const COVER_DIR = path.join(IMG_DIR, 'covers');
@@ -425,7 +431,7 @@ app.delete('/api/c/:coll/:slug', wrap(async (req, res) => {
 
 // ---------- tags ----------
 app.get('/api/tags', wrap(async (req, res) => {
-  res.json({ fields: inventory(), fieldNames: Tags.TAG_FIELDS, claude: !!API_KEY });
+  res.json({ fields: inventory(), fieldNames: Tags.TAG_FIELDS, claude: !!apiKey() });
 }));
 
 app.post('/api/tags/suggest', wrap(async (req, res) => {
@@ -438,7 +444,7 @@ app.post('/api/tags/suggest', wrap(async (req, res) => {
   };
   const inv = inventory();
   if (b.mode === 'claude') {
-    res.json({ mode: 'claude', suggestions: await Tags.suggestClaude(entry, inv, { apiKey: API_KEY, model: TAG_MODEL }) });
+    res.json({ mode: 'claude', suggestions: await Tags.suggestClaude(entry, inv, { apiKey: apiKey(), model: tagModel() }) });
   } else {
     res.json({ mode: 'local', suggestions: Tags.suggestLocal(entry, inv, 8, b.field === 'skills' ? 'skills' : 'tags') });
   }
@@ -455,7 +461,7 @@ app.post('/api/autofill', wrap(async (req, res) => {
   const AF = require('./lib/autofill');
   const input = { collLabel: c.label, fields, values: b.values || {}, body: String(b.body || ''), docs, inventory: inventory(), titleSlug: b.slug || '' };
   if (b.mode === 'claude') {
-    res.json({ mode: 'claude', proposals: await AF.claudeAutofill(input, { apiKey: API_KEY, model: TAG_MODEL }), needsClaude: [] });
+    res.json({ mode: 'claude', proposals: await AF.claudeAutofill(input, { apiKey: apiKey(), model: tagModel() }), needsClaude: [] });
   } else {
     res.json({ mode: 'local', ...AF.localAutofill(input) });
   }
@@ -468,7 +474,7 @@ app.post('/api/credential/find', wrap(async (req, res) => {
   const topics = Array.isArray(b.topics) ? b.topics.map(String).slice(0, 100) : [];
   res.json({ result: await require('./lib/credential').findCredential(
     { title: b.title, issuer: b.issuer, topics, skills: inv.skills.tags.map(t => t.tag) },
-    { apiKey: API_KEY, model: SEARCH_MODEL }) });
+    { apiKey: apiKey(), model: searchModel() }) });
 }));
 
 // ---------- ISBN lookup (Open Library) ----------
@@ -584,10 +590,84 @@ app.get('/api/git/pr', wrap(async (req, res) => {
   res.json({ pr });
 }));
 
+// ---------- settings ----------
+const sourceOf = (envName, fileKey) => (process.env[envName] ? 'environment' : fileCfg[fileKey] ? 'config' : 'default');
+
+function settingsView() {
+  const key = apiKey();
+  return {
+    apiKey: { set: !!key, tail: key ? key.slice(-4) : '', source: process.env.ANTHROPIC_API_KEY ? 'environment' : fileCfg.anthropicApiKey ? 'config' : 'none' },
+    tagModel: { value: tagModel(), source: sourceOf('STUDIO_TAG_MODEL', 'tagModel'), default: DEFAULT_MODEL },
+    searchModel: { value: searchModel(), source: process.env.STUDIO_SEARCH_MODEL ? 'environment' : fileCfg.searchModel ? 'config' : 'default', default: 'same as the tag model' },
+    previewPort: previewPort(),
+    onlineCovers: onlineCovers(),
+    branchPrefix: branchPrefix(),
+    info: {
+      version: require('./package.json').version, node: process.version, repo: REPO, repoExists: repoExists(),
+      port: PORT, host: HOST, configFile: CONFIG_FILE, siteRemote: fileCfg.siteRemote || process.env.SITE_REMOTE || 'https://github.com/Nermeta/nermeta.github.io'
+    }
+  };
+}
+
+function saveConfig(patch) {
+  let cur = {};
+  try { cur = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* new file */ }
+  for (const [k, v] of Object.entries(patch)) { if (v === undefined) continue; if (v === null) delete cur[k]; else cur[k] = v; }
+  const tmp = CONFIG_FILE + '.tmp';
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(cur, null, 2) + '\n', { mode: 0o600 });
+    fs.renameSync(tmp, CONFIG_FILE);
+  } catch (e) { throw httpErr(500, `Could not write config.json: ${e.message}`); }
+  fileCfg = cur;
+}
+
+app.get('/api/settings', (req, res) => res.json(settingsView()));
+
+app.put('/api/settings', wrap(async (req, res) => {
+  const b = req.body || {}, patch = {};
+  if (b.anthropicApiKey !== undefined) {
+    const k = String(b.anthropicApiKey).trim();
+    if (k && !/^[\w-]{20,300}$/.test(k)) throw httpErr(400, 'That does not look like an API key (letters, numbers, - and _ only).');
+    patch.anthropicApiKey = k || null;
+  }
+  for (const name of ['tagModel', 'searchModel']) {
+    if (b[name] === undefined) continue;
+    const v = String(b[name]).trim();
+    if (v && !/^[\w.:-]{3,80}$/.test(v)) throw httpErr(400, `${name === 'tagModel' ? 'Model' : 'Search model'} names use letters, numbers and - . : _ only.`);
+    patch[name] = v || null;
+  }
+  if (b.previewPort !== undefined) {
+    const n = Number(b.previewPort);
+    if (!Number.isInteger(n) || n < 1024 || n > 65535 || n === PORT) throw httpErr(400, `Preview port must be a whole number from 1024 to 65535, and not ${PORT} (the Studio's own).`);
+    patch.previewPort = n;
+  }
+  if (b.onlineCovers !== undefined) patch.onlineCovers = !!b.onlineCovers;
+  if (b.branchPrefix !== undefined) {
+    const v = String(b.branchPrefix).trim();
+    if (v && !/^[A-Za-z0-9][A-Za-z0-9._-]*\/$/.test(v) && !/^[A-Za-z0-9][A-Za-z0-9._-]*-$/.test(v)) throw httpErr(400, 'Branch prefix looks like “studio/” or “edit-”.');
+    patch.branchPrefix = v;
+  }
+  saveConfig(patch);
+  res.json(settingsView());
+}));
+
+// Checks a key against the API's (free) model list. The key is never sent back to the browser.
+app.post('/api/settings/test-key', wrap(async (req, res) => {
+  const typed = String((req.body || {}).anthropicApiKey || '').trim();
+  const key = typed || apiKey();
+  if (!key) throw httpErr(400, 'No API key to test yet.');
+  let r;
+  try { r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(15000) }); }
+  catch (e) { throw httpErr(502, `Could not reach the Claude API: ${e.message}`); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw httpErr(400, `The API rejected this key${j.error && j.error.message ? ': ' + j.error.message : ` (${r.status})`}.`);
+  res.json({ ok: true, models: (j.data || []).map(m => m.id) });
+}));
+
 // ---------- local site preview (Jekyll) ----------
 const Site = require('./lib/site');
 app.get('/api/site', (req, res) => res.json(Site.status()));
-app.post('/api/site/start', wrap(async (req, res) => { needRepo(); res.json(Site.start(REPO)); }));
+app.post('/api/site/start', wrap(async (req, res) => { needRepo(); res.json(Site.start(REPO, { port: previewPort() })); }));
 app.post('/api/site/stop', (req, res) => res.json(Site.stop()));
 
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars

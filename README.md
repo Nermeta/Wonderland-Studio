@@ -69,7 +69,7 @@ Saving never rewrites a whole header. Front matter is split into per-key blocks 
 - If a file changes on disk while it is open, saving asks before overwriting.
 - Delete moves the file to `.studio-trash/` in the site repo.
 
-`npm test` runs the tag unit tests, then copies your site to a temp folder, does a no-op save on every file, and fails if one byte differs.
+`npm test` runs the unit tests (tags, credentials, auto-fill, settings), then copies your site to a temp folder, does a no-op save on every file, and fails if one byte differs.
 
 ## Git: commit, push, review
 
@@ -100,6 +100,15 @@ The container runs as your own user (`STUDIO_UID`/`STUDIO_GID`, default 1000) so
 ## Safety
 
 Binds to `127.0.0.1`, checks the `Host` header (DNS-rebinding guard), rejects cross-origin API calls, validates every filename, and only writes inside the collection folders, `assets/images/badges/` and `.studio-trash/`. Add `.studio-trash/` to the site's `.gitignore`; the git panel already hides it.
+
+## Settings
+
+The **Settings** tab edits `config.json` (git-ignored, saved with private permissions) and applies changes at once, no restart:
+- **Claude API key** (write-only: the Studio shows only the last four characters and never sends the key to the browser), with a **Test** button that checks it against the API's free model list. An `ANTHROPIC_API_KEY` environment variable overrides it and is safer on shared computers.
+- **Model** and **web-search model**.
+- **Covers from Open Library** on or off (off keeps the Studio fully offline apart from Claude).
+- **Branch prefix** for new branches, and the **preview port**.
+- **About this install**: version, address, site folder, and where the settings live. The site folder and Studio port are set in `config.json` (or `JEKYLL_REPO`/`PORT`) and need a restart.
 
 ## Not built yet
 
