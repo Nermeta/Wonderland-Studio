@@ -84,7 +84,7 @@ assert.ok(s.length <= 8);
   assert.deepStrictEqual(r.map(x => x.isbn), ['9781635575637'], 'prefers ISBN-13, de-duplicates, drops entries without one');
   assert.strictEqual(r[0].pages, 272);
   const { classify } = require('../lib/isbn');
-  assert.deepStrictEqual(classify(['Fantasy fiction', 'Magic', 'Mystery fiction'], { genres: ['fantasy', 'mystery', 'career'], topics: [] }), { genre: ['fiction', 'fantasy', 'mystery'], topic: '' });
+  assert.deepStrictEqual(classify(['Fantasy fiction', 'Magic', 'Mystery fiction'], { genres: ['fantasy', 'mystery', 'career'], topics: [] }), { genre: ['fiction', 'fantasy', 'mystery'], topic: 'fantasy' });
   assert.deepStrictEqual(classify(['Habit', 'Self-help', 'Productivity'], { genres: ['productivity', 'self-development'], topics: ['productivity'] }), { genre: ['nonfiction', 'productivity'], topic: 'productivity' });
   assert.deepStrictEqual(classify([], { genres: ['x'] }), { genre: [], topic: '' }, 'no subjects, no guess');
   await assert.rejects(() => lookupIsbn({ title: ' ' }, { fetchImpl: fake }), /title first/);

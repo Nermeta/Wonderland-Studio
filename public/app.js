@@ -249,28 +249,63 @@
   const vocabFor = key => (state.vocab && state.vocab[key] ? state.vocab[key] : null);
   const normKey = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-  function datalistFor(f) {
+  /** Options offered under a field: your tag vocabulary (with use counts) or the field's known values. */
+  function optionsFor(f) {
     const voc = f.type === 'list' ? vocabFor(f.key) : null;
-    if (voc && voc.tags.length) {
-      const dl = el('datalist'); dl.id = 'dl-' + f.key;
-      dl.innerHTML = voc.tags.map(t => `<option value="${esc(t.tag)}" label="${t.count} use${t.count === 1 ? '' : 's'}">`).join('');
-      return dl;
+    if (voc && voc.tags.length) return voc.tags.map(t => ({ value: t.tag, note: `${t.count} use${t.count === 1 ? '' : 's'}` }));
+    return (state.meta.suggestions[f.key] || f.options || []).map(o => ({ value: o }));
+  }
+
+  /** A themed dropdown that always opens below the field. Replaces the browser's datalist. */
+  function attachDropdown(w, input, f, { pick, exclude = () => [], clear = true }) {
+    const menu = el('ul', 'dd'); menu.hidden = true; menu.setAttribute('role', 'listbox');
+    w.classList.add('has-dd'); w.appendChild(menu);
+    let items = [], at = -1;
+    const close = () => { menu.hidden = true; at = -1; };
+    const mark = () => [...menu.children].forEach((li, i) => li.classList.toggle('on', i === at));
+    function open() {
+      const q = normKey(input.value), skip = new Set(exclude().map(normKey));
+      const all = optionsFor(f).filter(o => !skip.has(normKey(o.value)));
+      items = all.filter(o => !q || normKey(o.value).includes(q))
+        .sort((x, y) => (normKey(y.value).startsWith(q) - normKey(x.value).startsWith(q))).slice(0, 40);
+      menu.innerHTML = '';
+      if (!items.length) return close();
+      items.forEach((o, i) => {
+        const li = el('li', null, `<span>${esc(o.value)}</span>${o.note ? `<small>${esc(o.note)}</small>` : ''}`);
+        li.setAttribute('role', 'option');
+        li.addEventListener('mousedown', e => { e.preventDefault(); pick(o.value); if (clear) { input.value = ''; open(); } else close(); });
+        menu.appendChild(li);
+      });
+      const anchor = input.closest('.chips') || input;
+      menu.style.top = anchor.offsetTop + anchor.offsetHeight + 2 + 'px';
+      at = -1; menu.hidden = false;
     }
-    const opts = (state.meta.suggestions[f.key] || f.options || []);
-    if (!opts.length) return null;
-    const dl = el('datalist'); dl.id = 'dl-' + f.key;
-    dl.innerHTML = opts.map(o => `<option value="${esc(o)}">`).join('');
-    return dl;
+    input.addEventListener('focus', open);
+    input.addEventListener('input', open);
+    input.addEventListener('blur', close);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !menu.hidden) { e.preventDefault(); close(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (menu.hidden) open();
+        if (!items.length) return;
+        e.preventDefault();
+        at = (at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; mark();
+        menu.children[at].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' && at >= 0 && !menu.hidden) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        pick(items[at].value); if (clear) { input.value = ''; open(); } else close();
+      }
+    });
   }
 
   function buildText(f) {
     const w = wrapField(f);
     const input = el('input'); input.type = f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text';
     if (f.type === 'number') { if (f.min != null) input.min = f.min; if (f.max != null) input.max = f.max; input.step = f.step || 1; }
-    if (f.type === 'combo' && (state.meta.suggestions[f.key] || f.options)) input.setAttribute('list', 'dl-' + f.key);
     input.value = state.values[f.key] ?? '';
     input.addEventListener('input', () => { state.values[f.key] = input.value; afterChange(f.key); });
     w.appendChild(input);
+    if (f.type === 'combo' && optionsFor(f).length) attachDropdown(w, input, f, { clear: false, pick: v => { input.value = v; state.values[f.key] = v; afterChange(f.key); } });
     if (f.key === 'isbn' && state.cur === 'library') w.appendChild(buildIsbnLookup(w, input));
     return addHint(w, f);
   }
@@ -373,7 +408,6 @@
     const w = wrapField(f);
     const box = el('div', 'chips');
     const input = el('input'); input.type = 'text'; input.placeholder = state.values[f.key].length ? '' : 'add…';
-    if ((state.meta.suggestions[f.key] || f.options || []).length || (vocabFor(f.key) && vocabFor(f.key).tags.length)) input.setAttribute('list', 'dl-' + f.key);
     const arr = () => state.values[f.key];
     function draw() {
       box.querySelectorAll('.tag').forEach(t => t.remove());
@@ -398,6 +432,7 @@
       if (notes.length) toast(`Using the existing spelling: ${notes.join(', ')}`);
       if (changed) { draw(); afterChange(f.key); }
     }
+    attachDropdown(w, input, f, { pick: add, exclude: arr });
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(input.value); input.value = ''; }
       else if (e.key === 'Backspace' && !input.value && arr().length) { arr().pop(); draw(); afterChange(f.key); }
@@ -578,8 +613,6 @@
     }
     for (const f of visibleFields()) {
       if (f.custom) continue;
-      const d = datalistFor(f);
-      if (d) lay.appendChild(d);
       grid.appendChild(buildField(f));
     }
     lay.prepend(grid);
