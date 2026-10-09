@@ -605,6 +605,21 @@ app.post('/api/git/fetch', wrap(async (req, res) => {
   res.json(await gitState());
 }));
 
+// After a pull request is merged on GitHub: go back to main and bring the merged work into this computer.
+app.post('/api/git/sync-main', wrap(async (req, res) => {
+  needRepo();
+  const st = await gitState();
+  if (st.changes.length) throw httpErr(400, 'Commit or discard your changes first, so nothing is lost when switching to main.');
+  try { await git(['fetch', '--prune', 'origin']); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  let main = '';
+  try { main = (await git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])).trim().replace(/^origin\//, ''); } catch { /* not set */ }
+  if (!main) for (const cand of ['main', 'master']) { try { await git(['rev-parse', '--verify', `refs/remotes/origin/${cand}`]); main = cand; break; } catch { /* try next */ } }
+  if (!main) throw httpErr(400, 'Could not tell which branch is the main one.');
+  await git(['switch', main]);
+  try { await git(['pull', '--ff-only', 'origin', main]); } catch (e) { throw httpErr(400, authHint(e.message)); }
+  res.json({ state: await gitState(), main });
+}));
+
 app.post('/api/git/push', wrap(async (req, res) => {
   needRepo();
   const st = await gitState();

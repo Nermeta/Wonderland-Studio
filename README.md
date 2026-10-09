@@ -102,6 +102,7 @@ Saving never rewrites a whole header. Front matter is split into per-key blocks 
 The chip in the header shows the current branch, the number of changed files and any commits not pushed (↑2). Open it to create or switch branches, pick files, and commit with a one-line message (max 100 characters). Under **Share on GitHub**:
 
 - **Check GitHub** runs `git fetch --prune`, so the status below it is current. **Pull updates** appears when your branch is behind and fast-forwards only.
+- **Update from main** is for after you merge a pull request on GitHub: it switches to `main` and downloads the merged work (the Studio edits a local copy, so merged changes only appear after this). It refuses while you have uncommitted changes.
 - **Push branch** pushes the current feature branch to `origin`. It refuses on `main`/`master`, refuses while files are uncommitted, never forces, and tells you to run `gh auth login` if GitHub rejects your sign-in.
 - **Open pull request ↗** opens GitHub's compare page for the branch (or, if the GitHub CLI is signed in and a pull request exists, that pull request). Review and merge it there; the Studio does not merge.
 - Commits on `main`/`master` are refused. Create a feature branch first, and check that your branch includes the newest `main` (the dialog says when it doesn't).

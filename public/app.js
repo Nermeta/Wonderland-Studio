@@ -1440,6 +1440,10 @@
     finally { btn.textContent = label; fillShare(); }
   }
   $('#git-fetch').addEventListener('click', e => shareAction(e.currentTarget, '/api/git/fetch', 'Checked GitHub.'));
+  $('#git-main').addEventListener('click', async e => {
+    await shareAction(e.currentTarget, '/api/git/sync-main', 'Switched to main and pulled the latest.');
+    try { await loadList(); } catch { /* list reloads on next navigation */ }
+  });
   $('#git-pull').addEventListener('click', e => shareAction(e.currentTarget, '/api/git/pull', 'Pulled the latest.'));
   $('#git-push').addEventListener('click', e => shareAction(e.currentTarget, '/api/git/push', 'Pushed. Open the pull request to review it.'));
 
