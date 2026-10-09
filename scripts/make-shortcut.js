@@ -18,7 +18,7 @@ const psq = s => `'${String(s).replace(/'/g, "''")}'`; // PowerShell single-quot
 
 /** The PowerShell that creates the shortcut. Pure, so it can be tested. */
 function powershellScript({ distro, linuxPath }) {
-  const args = `-d "${distro}" --cd "${linuxPath}" -e bash -lc "npm run launch"`;
+  const args = `-d "${distro}" --cd "${linuxPath}" -e bash "${linuxPath}/scripts/launch.sh"`;
   return [
     "$ErrorActionPreference = 'Stop'",
     "$icon = Join-Path (Join-Path $env:LOCALAPPDATA 'WonderlandStudio') 'studio.ico'",
@@ -30,7 +30,7 @@ function powershellScript({ distro, linuxPath }) {
     `$s.Arguments = ${psq(args)}`,
     '$s.WorkingDirectory = $env:USERPROFILE',
     '$s.IconLocation = "$icon,0"',
-    '$s.WindowStyle = 7',
+    '$s.WindowStyle = 1',
     `$s.Description = ${psq('Start the Wonderland Studio and open it in your browser')}`,
     '$s.Save()',
     'Write-Output $lnk'

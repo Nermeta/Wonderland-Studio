@@ -19,7 +19,7 @@ Push your site branches before switching computers. Anything not pushed lives on
 
 `npm run launch` starts the Studio if it isn't running and opens it in your browser (the first run on a new computer also installs the packages and fetches the site). `npm run shortcut` puts a **Wonderland Studio** icon on your desktop that does exactly that:
 
-- **Windows with WSL (Ubuntu):** run `npm run shortcut` once in your Ubuntu terminal, in this folder. It creates a desktop shortcut that starts the Studio inside WSL and opens it in your Windows browser. A minimized window stays open while the Studio runs; close it, or use **Settings → Quit the Studio**, to stop. Right-click the icon to pin it to the taskbar or Start. If the shortcut opens and closes straight away with “npm: command not found”, your Node install loads only in interactive shells; add its setup lines (for example nvm's) to `~/.profile`. `npm run shortcut -- --print` shows what it would create without changing anything.
+- **Windows with WSL (Ubuntu):** run `npm run shortcut` once in your Ubuntu terminal, in this folder. It creates a desktop shortcut that starts the Studio inside WSL and opens it in your Windows browser. A window stays open while the Studio runs; close it, or use **Settings → Quit the Studio**, to stop. Right-click the icon to pin it to the taskbar or Start. If the shortcut opens and closes straight away with “npm: command not found”, your Node install loads only in interactive shells; add its setup lines (for example nvm's) to `~/.profile`. `npm run shortcut -- --print` shows what it would create without changing anything.
 - **Linux:** the same command creates a `.desktop` launcher. **macOS:** it creates a `Wonderland Studio.command` file on the Desktop.
 
 ## What it edits
