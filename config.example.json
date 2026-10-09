@@ -1,4 +1,5 @@
 {
-  "repo": "C:/Users/you/path/to/wynters-wonderland",
-  "port": 4747
+  "repo": "./site",
+  "port": 4747,
+  "siteRemote": "https://github.com/Nermeta/nermeta.github.io"
 }

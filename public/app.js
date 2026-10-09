@@ -9,7 +9,8 @@
     slug: null, kind: null, values: {}, body: '', other: {}, warnings: [], mtime: null, file: '',
     newSlug: '', slugTouched: false,
     savedKey: '', pendingFile: null, pendingUrl: null,
-    filter: 'all', search: '', pane: 'edit', git: null
+    filter: 'all', search: '', pane: 'edit', git: null,
+    view: 'edit', vocab: null, claude: false, tv: { field: 'tags', filter: 'all', search: '' }
   };
 
   // ---------- utils ----------
@@ -76,15 +77,20 @@
     const nav = $('#tabs');
     nav.innerHTML = '';
     for (const c of state.schema.collections) {
-      const b = el('button', 'tab' + (c.id === state.cur ? ' active' : ''), esc(c.label));
+      const b = el('button', 'tab' + (state.view === 'edit' && c.id === state.cur ? ' active' : ''), esc(c.label));
       b.type = 'button';
       b.addEventListener('click', () => selectCollection(c.id));
       nav.appendChild(b);
     }
+    const tb = el('button', 'tab' + (state.view === 'tags' ? ' active' : ''), 'Tags');
+    tb.type = 'button';
+    tb.addEventListener('click', openTags);
+    nav.appendChild(tb);
   }
 
   async function selectCollection(id) {
-    if (id !== state.cur && !guard()) return;
+    if ((id !== state.cur || state.view === 'tags') && !guard()) return;
+    state.view = 'edit'; $('.workroom').hidden = false; $('#tags-view').hidden = true;
     state.cur = id;
     store.set('ws.cur', id);
     history.replaceState(null, '', '#' + id);
@@ -96,7 +102,13 @@
     openNew();
   }
 
+  async function loadVocab() {
+    try { const d = await api('/api/tags'); state.vocab = d.fields; state.claude = d.claude; }
+    catch { state.vocab = state.vocab || null; }
+  }
+
   async function loadList() {
+    await loadVocab();
     const d = await api('/api/c/' + state.cur);
     state.items = d.items;
     state.meta = { suggestions: d.suggestions, skills: d.skills, badges: d.badges, covers: d.covers, badgePrefix: d.badgePrefix || state.meta.badgePrefix };
@@ -223,7 +235,16 @@
   }
   const addHint = (w, f) => { if (f.hint) w.appendChild(el('small', 'hint', esc(f.hint))); return w; };
 
+  const vocabFor = key => (state.vocab && state.vocab[key] ? state.vocab[key] : null);
+  const normKey = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+
   function datalistFor(f) {
+    const voc = f.type === 'list' ? vocabFor(f.key) : null;
+    if (voc && voc.tags.length) {
+      const dl = el('datalist'); dl.id = 'dl-' + f.key;
+      dl.innerHTML = voc.tags.map(t => `<option value="${esc(t.tag)}" label="${t.count} use${t.count === 1 ? '' : 's'}">`).join('');
+      return dl;
+    }
     const opts = (state.meta.suggestions[f.key] || f.options || []);
     if (!opts.length) return null;
     const dl = el('datalist'); dl.id = 'dl-' + f.key;
@@ -301,7 +322,7 @@
     const w = wrapField(f);
     const box = el('div', 'chips');
     const input = el('input'); input.type = 'text'; input.placeholder = state.values[f.key].length ? '' : 'add…';
-    if ((state.meta.suggestions[f.key] || f.options || []).length) input.setAttribute('list', 'dl-' + f.key);
+    if ((state.meta.suggestions[f.key] || f.options || []).length || (vocabFor(f.key) && vocabFor(f.key).tags.length)) input.setAttribute('list', 'dl-' + f.key);
     const arr = () => state.values[f.key];
     function draw() {
       box.querySelectorAll('.tag').forEach(t => t.remove());
@@ -316,7 +337,14 @@
     }
     function add(raw) {
       let changed = false;
-      for (const p of String(raw).split(',').map(s => s.trim()).filter(Boolean)) if (!arr().includes(p)) { arr().push(p); changed = true; }
+      const notes = [], canon = vocabFor(f.key) && vocabFor(f.key).canonical;
+      for (const p0 of String(raw).split(',').map(s => s.trim()).filter(Boolean)) {
+        let p = p0;
+        const c = canon && canon[normKey(p0)];
+        if (c && c !== p0) { notes.push(`${p0} → ${c}`); p = c; }
+        if (!arr().includes(p)) { arr().push(p); changed = true; }
+      }
+      if (notes.length) toast(`Using the existing spelling: ${notes.join(', ')}`);
       if (changed) { draw(); afterChange(f.key); }
     }
     input.addEventListener('keydown', e => {
@@ -331,7 +359,46 @@
     box.appendChild(input);
     draw();
     w.appendChild(box);
-    return addHint(w, f);
+    w._add = add;
+    addHint(w, f);
+    if (f.key === 'tags') w.appendChild(buildSuggest(w));
+    return w;
+  }
+
+  function buildSuggest(w) {
+    const wrap = el('div', 'suggest');
+    const bar = el('div', 'suggest-bar');
+    const list = el('div', 'sugg-list');
+    const local = el('button', 'btn-mini', '✦ Suggest tags'); local.type = 'button';
+    local.title = 'Matches your existing tags against this entry. Nothing leaves your machine.';
+    bar.appendChild(local);
+    local.addEventListener('click', () => runSuggest('local', local, list, w));
+    if (state.claude) {
+      const ai = el('button', 'btn-mini claude', 'Ask Claude'); ai.type = 'button';
+      ai.title = "Sends this entry's title, summary and body to the Claude API.";
+      ai.addEventListener('click', () => runSuggest('claude', ai, list, w));
+      bar.appendChild(ai);
+    }
+    wrap.append(bar, list);
+    return wrap;
+  }
+
+  async function runSuggest(mode, btn, listEl, w) {
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = mode === 'claude' ? 'Asking Claude…' : 'Thinking…';
+    try {
+      const r = await api('/api/tags/suggest', json('POST', { mode, values: state.values, body: state.body }));
+      listEl.innerHTML = '';
+      if (!r.suggestions.length) { listEl.appendChild(el('span', 'hint', 'No confident matches. Add tags by hand' + (state.claude && mode === 'local' ? ' or try Ask Claude.' : '.'))); return; }
+      if (mode === 'claude') listEl.appendChild(el('span', 'sugg-note', 'Suggested by Claude. Dashed tags are new to your vocabulary.'));
+      for (const s of r.suggestions) {
+        const b = el('button', 'sugg' + (s.isNew ? ' new' : ''), `${esc(s.tag)}${s.reason ? `<small>${esc(s.reason)}</small>` : ''}`);
+        b.type = 'button'; b.title = (s.isNew ? 'New tag. ' : '') + (s.reason || '');
+        b.addEventListener('click', () => { w._add(s.tag); b.remove(); });
+        listEl.appendChild(b);
+      }
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; btn.textContent = label; }
   }
 
   function buildField(f) {
@@ -606,7 +673,8 @@
       await loadList();
       const d = await api(`/api/c/${state.cur}/${encodeURIComponent(r.slug)}`);
       setDoc({ slug: r.slug, kind: d.kind, values: fromServer(d.kind, d.values), body: d.body, other: d.other, warnings: d.warnings, mtime: d.mtime, file: d.file });
-      toast(r.unchanged ? 'No changes to save.' : wasNew ? `Created ${d.file}` : `Saved ${d.file} — changed: ${r.changed.join(', ')}`);
+      const spelled = (r.normalized || []).map(n => `${n.from} → ${n.to}`);
+      toast((r.unchanged ? 'No changes to save.' : wasNew ? `Created ${d.file}` : `Saved ${d.file} — changed: ${r.changed.join(', ')}`) + (spelled.length ? ` · spelling matched: ${spelled.join(', ')}` : ''));
       await refreshGit();
     } catch (e) {
       if (e.status === 409 && e.data && e.data.conflict) {
@@ -671,6 +739,84 @@
     } catch (e) { toast(e.message, true); }
   }
 
+  // ---------- tags view ----------
+  const TV_NAMES = { tags: 'Tags', tech_stack: 'Tech stack', tools: 'Tools', genre: 'Genre', skills: 'Skills' };
+
+  async function openTags() {
+    if (state.view !== 'tags' && !guard()) return;
+    state.view = 'tags';
+    $('.workroom').hidden = true; $('#tags-view').hidden = false;
+    history.replaceState(null, '', '#tags');
+    renderTabs();
+    await loadVocab();
+    renderTagView();
+  }
+
+  function renderTagView() {
+    const v = state.vocab, tv = state.tv;
+    const seg = $('#tv-fields'); seg.innerHTML = '';
+    if (!v) { $('#tv-list').innerHTML = '<li class="empty">Could not load tags.</li>'; return; }
+    for (const k of Object.keys(TV_NAMES)) {
+      const b = el('button', k === tv.field ? 'on' : '', `${esc(TV_NAMES[k])} ${v[k] ? v[k].tags.length : 0}`); b.type = 'button';
+      b.addEventListener('click', () => { tv.field = k; tv.filter = 'all'; renderTagView(); });
+      seg.appendChild(b);
+    }
+    const data = v[tv.field];
+    const once = data.tags.filter(t => t.count === 1).length;
+    const dupKeys = new Set(data.duplicates.flatMap(d => d.variants.map(x => x.tag)));
+
+    const f = $('#tv-filters'); f.innerHTML = '';
+    const chip = (key, label, n) => {
+      const b = el('button', 'chip-btn' + (tv.filter === key ? ' active' : ''), `${esc(label)} <span>${n}</span>`); b.type = 'button';
+      b.addEventListener('click', () => { tv.filter = key; renderTagView(); });
+      f.appendChild(b);
+    };
+    chip('all', 'All', data.tags.length);
+    chip('once', 'Used once', once);
+    chip('multi', 'Used 2+ times', data.tags.length - once);
+    if (dupKeys.size) chip('dups', 'Spelling clashes', dupKeys.size);
+
+    const note = $('#tv-notice');
+    note.hidden = !data.duplicates.length;
+    note.innerHTML = data.duplicates.length
+      ? `<b>${data.duplicates.length} spelling clash${data.duplicates.length > 1 ? 'es' : ''} in ${esc(TV_NAMES[tv.field].toLowerCase())}:</b> ` +
+        data.duplicates.map(d => d.variants.map(x => `<code>${esc(x.tag)}</code> (${x.count})`).join(' vs ')).join(' · ') +
+        '<br>Open the entries below and keep one spelling. New tags are matched to the most-used spelling automatically.'
+      : '';
+
+    const q = tv.search.trim().toLowerCase();
+    const max = Math.max(1, ...data.tags.map(t => t.count));
+    const rows = data.tags
+      .filter(t => tv.filter === 'all' || (tv.filter === 'once' ? t.count === 1 : tv.filter === 'multi' ? t.count > 1 : dupKeys.has(t.tag)))
+      .filter(t => !q || t.tag.toLowerCase().includes(q));
+    const ul = $('#tv-list'); ul.innerHTML = '';
+    if (!rows.length) {
+      const li = el('li', 'empty', q ? `No ${esc(TV_NAMES[tv.field].toLowerCase())} match “${esc(tv.search.trim())}”. ` : 'Nothing here.');
+      if (q) {
+        const clr = el('button', 'linkish', 'Clear search'); clr.type = 'button';
+        clr.addEventListener('click', () => { tv.search = ''; $('#tv-search').value = ''; renderTagView(); });
+        li.appendChild(clr);
+      }
+      ul.appendChild(li);
+      return;
+    }
+    for (const t of rows) {
+      const li = el('li');
+      const also = (t.alsoIn || []).map(a => `also “${esc(a.tag)}” in ${esc(TV_NAMES[a.field].toLowerCase())}`).join(' · ');
+      li.innerHTML = `<details><summary><span class="tg${dupKeys.has(t.tag) ? ' dup-tag' : ''}">${esc(t.tag)}${also ? `<small>${also}</small>` : ''}</span>` +
+        `<span class="bar"><i style="width:${Math.max(4, Math.round((t.count / max) * 100))}%"></i></span><span class="ct">${t.count}</span></summary><ul class="ents"></ul></details>`;
+      const ents = li.querySelector('.ents');
+      for (const e of t.entries) {
+        const b = el('button', null, `<span>${esc(e.collLabel)}</span>${esc(e.title)}`); b.type = 'button';
+        b.addEventListener('click', async () => { await selectCollection(e.coll); await openItem(e.slug); });
+        const eli = el('li'); eli.appendChild(b); ents.appendChild(eli);
+      }
+      ul.appendChild(li);
+    }
+  }
+
+  $('#tv-search').addEventListener('input', e => { state.tv.search = e.target.value; renderTagView(); });
+
   // ---------- wiring ----------
   $('#form').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'submit') e.preventDefault(); });
   $('#form').addEventListener('submit', e => { e.preventDefault(); save(false); });
@@ -730,6 +876,7 @@
       await loadList();
       openNew();
       refreshGit();
+      if (want === 'tags') await openTags();
     } catch (e) { toast(e.message, true); }
   })();
 })();

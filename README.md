@@ -1,17 +1,19 @@
 # Wonderland Studio
 
-A local content editor for the **Wynter's Wonderland** Jekyll site. It runs on your machine, edits the site's Markdown files in place, and binds to `127.0.0.1` only.
+A local content editor for the **Wynter's Wonderland** Jekyll site. It edits the site's Markdown files in place and binds to `127.0.0.1` only.
 
-## Run
+## Set up (any computer)
 
 ```bash
+git clone https://github.com/Nermeta/Wonderland-Studio && cd Wonderland-Studio
 npm install
-cp config.example.json config.json   # set "repo" to your local nermeta.github.io clone
-npm start                            # http://localhost:4747
+npm run setup      # clones the website into ./site (ignored by this repo's git)
+npm start          # http://localhost:4747
 ```
 
-Or skip the config file: `JEKYLL_REPO=/path/to/repo npm start`
-(PowerShell: `$env:JEKYLL_REPO="C:\path\to\repo"; npm start`)
+`./site` is a normal checkout of the website with its own git history, so the Studio never commits it. To use an existing clone instead, copy `config.example.json` to `config.json` and set `"repo"`, or run with `JEKYLL_REPO=/path/to/site`.
+
+Push your site branches before switching computers. Anything not pushed lives only in that computer's `./site`.
 
 ## What it edits
 
@@ -20,43 +22,58 @@ One tab per collection, named like the site nav:
 | Tab | Directory | Notes |
 | --- | --- | --- |
 | Library | `_book-reviews/` | Cover preview from `assets/images/covers/<isbn>.jpg` when present |
-| Emblems | `_certifications/` | Two kinds: **Certification** (badge art + shape picker with live display-case preview) and **Education** |
+| Emblems | `_certifications/` | **Certification** (badge art, shape picker with live display-case preview) and **Education** kinds |
 | Discoveries | `_deep-dives/` | |
-| Chronicles | `_learning-logs/` | Two kinds: **Skill** and **Session log** (picks its parent from existing skills) |
+| Chronicles | `_learning-logs/` | **Skill** and **Session log** kinds (a session picks its parent from existing skills) |
 | Explorations | `_tutorials/` | New files get the `YYYY-MM-DD-` prefix the existing ones use |
 | Field Notes | `_writeups/` | |
+| Tags | all of the above | See below |
 
-Forms are generated from per-collection field schemas (`lib/schemas.js`). Each shows the `layout` and `public` default it reads from `_config.yml`.
+Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` and `public` default read from `_config.yml`. The Preview tab renders the entry's front matter and Markdown in the site's look (an approximation; a real Jekyll build is the final word). The **Visible to the AI chat** switch writes `public: false`, which keeps the entry out of `context.json`.
 
-- **Preview tab** renders the entry's front matter and Markdown in the site's look. It approximates the layout; a real Jekyll build is still the final word.
-- **Visible to the AI chat** toggle writes `public: false`, which keeps the entry out of `context.json`. The page still publishes.
-- Dropdown-style fields (difficulty, platform, topic, tags…) suggest values already used in that collection but accept new ones.
+## Tags
+
+- **Tags tab:** every value of `tags`, `tech_stack`, `tools`, `genre` and `skills`, with counts, a usage bar, and the entries that use each one (click an entry to open it). Filter by used once / used 2+ times / spelling clashes. A clash means one field spells the same tag two ways (`DNS` and `dns`). A note such as *also "DNS" in skills* means a different field spells it differently; fields are separate vocabularies, so that is informational only.
+- **Normalize on save:** a tag you add takes the spelling already used most often (type `DNS`, get `dns`). Tags already on an entry are never rewritten.
+- **✦ Suggest tags** (tags field): scores your existing tags against the entry's title, summary, topic and body, and also offers the entry's own tech stack/tools/genre values. Offline and private. Click a suggestion to add it; dashed ones are new to your vocabulary.
+- **Ask Claude** (optional): appears when an API key is set. It sends the entry's title, summary and body, plus your tag vocabulary, to the Claude API and returns up to 8 tags, reusing your spellings. Set `ANTHROPIC_API_KEY` in your environment (preferred), or `"anthropicApiKey"` in the git-ignored `config.json`. The model defaults to `claude-haiku-5-5`; override with `STUDIO_TAG_MODEL` or `"tagModel"`. It costs API usage per click.
 
 ## It only changes what you change
 
-Saving never re-writes a whole header. The editor splits front matter into per-key blocks and rewrites **only the keys whose value changed**. Everything else is written back byte-for-byte: comments, quoting, key order, date style, line endings, keys the editor doesn't know about (shown read-only under "Other front matter"). A no-op save writes nothing.
+Saving never rewrites a whole header. Front matter is split into per-key blocks and **only keys whose value changed** are rewritten; everything else is kept byte-for-byte (comments, quoting, key order, date style, line endings, keys the editor doesn't manage). A no-op save writes nothing.
 
-- Legacy values outside a field's usual options (for example a `status` the schema doesn't list) never block saving until you change that field.
-- Duplicate keys are flagged. Editing that field keeps the last one, as Jekyll does.
-- If a file changes on disk while you have it open, saving asks before overwriting.
-- Delete moves the file to `.studio-trash/` in the repo rather than erasing it.
+- Legacy values outside a field's usual options never block saving until you change that field.
+- Duplicate keys are flagged; editing one keeps the last, as Jekyll does.
+- If a file changes on disk while it is open, saving asks before overwriting.
+- Delete moves the file to `.studio-trash/` in the site repo.
 
-Run `npm test` to prove it on your own repo: it copies the site to a temp folder, does a no-op save on every file, and fails if a single byte differs.
+`npm test` runs the tag unit tests, then copies your site to a temp folder, does a no-op save on every file, and fails if one byte differs.
 
 ## Git (branch + commit only)
 
-The chip in the top right shows the current branch and how many files changed. From there you can create or switch to a branch, tick the files to include, and commit with a one-line message.
+The chip in the header shows the current branch and the number of changed files. From it you can create or switch branches, pick files, and commit with a one-line message (max 100 characters).
 
 - Commits on `main`/`master` are refused. Create a feature branch first.
-- Messages must be a single line (max 100 characters).
 - It never pushes. Push and open the PR yourself.
+- It does not fetch or pull. Run `git -C site fetch --prune` (or `npm run setup`) before you start.
+
+## Docker (optional, not yet tested)
+
+The native setup above needs only Node and git. These files are provided for running the Studio in a container if you prefer:
+
+```bash
+mkdir -p site
+cp .env.example .env     # set GIT_NAME, GIT_EMAIL (and optionally ANTHROPIC_API_KEY)
+docker compose run --rm studio node scripts/setup.js   # clones the site into ./site
+docker compose up --build                              # http://localhost:4747
+```
+
+The container runs as your own user (`STUDIO_UID`/`STUDIO_GID`, default 1000) so files in `./site` stay yours, and the port is published to localhost only. Commits need `GIT_NAME` and `GIT_EMAIL` because the container has no git identity of its own.
 
 ## Safety
 
-- Binds to `127.0.0.1`, checks the `Host` header (DNS-rebinding guard) and rejects cross-origin API calls.
-- Filenames are validated; nothing outside the collection folders, `assets/images/badges/` and `.studio-trash/` is written.
-- Add `.studio-trash/` to the site's `.gitignore`. The git panel already hides it.
+Binds to `127.0.0.1`, checks the `Host` header (DNS-rebinding guard), rejects cross-origin API calls, validates every filename, and only writes inside the collection folders, `assets/images/badges/` and `.studio-trash/`. Add `.studio-trash/` to the site's `.gitignore`; the git panel already hides it.
 
 ## Not built yet
 
-`_posts/` (only the default "Welcome to Jekyll" post lives there), `_pages/`, `context.json` regeneration, and local Jekyll builds.
+`_posts/` (only the default "Welcome to Jekyll" post), `_pages/`, `context.json` regeneration, local Jekyll builds, tag rename/merge.

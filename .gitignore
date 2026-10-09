@@ -1,4 +1,8 @@
 node_modules/
 config.json
+.env
 .DS_Store
 *:Zone.Identifier
+
+# Local checkout of the website. It has its own git history, so it is never committed here.
+/site/

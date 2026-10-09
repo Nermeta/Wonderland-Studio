@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/roundtrip.js"
+    "setup": "node scripts/setup.js",
+    "test": "node test/tags.js && node test/roundtrip.js"
   },
   "license": "UNLICENSED",
   "private": true,

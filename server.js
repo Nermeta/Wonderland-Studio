@@ -5,7 +5,7 @@
  * Repo location (first match wins):
  *   1. JEKYLL_REPO env var
  *   2. config.json  { "repo": "...", "port": 4747 }
- *   3. ../wynters-wonderland (sibling folder)
+ *   3. ./site (a clone of the website inside this folder; `npm run setup` creates it)
  */
 const express = require('express');
 const multer = require('multer');
@@ -17,13 +17,20 @@ const { execFile } = require('child_process');
 
 const FM = require('./lib/frontmatter');
 const { COLLECTIONS } = require('./lib/schemas');
+const Tags = require('./lib/tags');
 
 // ---------- config ----------
 let fileCfg = {};
 try { fileCfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8')); } catch { /* optional */ }
 
-const REPO = path.resolve(process.env.JEKYLL_REPO || fileCfg.repo || path.join(__dirname, '..', 'wynters-wonderland'));
+// Relative paths in config.json resolve against this folder, so "./site" travels with the Studio.
+const REPO = process.env.JEKYLL_REPO
+  ? path.resolve(process.env.JEKYLL_REPO)
+  : path.resolve(__dirname, fileCfg.repo || 'site');
+const HOST = process.env.STUDIO_HOST || '127.0.0.1'; // only change inside a container; publish the port to localhost
 const PORT = Number(process.env.PORT || fileCfg.port || 4747);
+const API_KEY = process.env.ANTHROPIC_API_KEY || fileCfg.anthropicApiKey || '';
+const TAG_MODEL = process.env.STUDIO_TAG_MODEL || fileCfg.tagModel || 'claude-haiku-5-5';
 const IMG_DIR = path.join(REPO, 'assets', 'images');
 const BADGE_DIR = path.join(IMG_DIR, 'badges');
 const COVER_DIR = path.join(IMG_DIR, 'covers');
@@ -168,6 +175,38 @@ function validateFields(kind, values, { create, orig = {} }) {
   return { errs, clean };
 }
 
+// ---------- tags ----------
+function allDocs() {
+  const docs = [];
+  for (const c of COLLECTIONS) {
+    const dir = colDir(c);
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir).filter(x => /\.(md|markdown)$/.test(x))) {
+      const slug = f.replace(/\.(md|markdown)$/, '');
+      if (!slugOk(slug)) continue;
+      try {
+        const d = readDoc(c, slug);
+        docs.push({ coll: c.id, collLabel: c.label, slug, title: d.data.title != null ? String(d.data.title) : slug, data: d.data });
+      } catch { /* unreadable file: skip */ }
+    }
+  }
+  return docs;
+}
+const inventory = () => Tags.buildInventory(allDocs());
+
+/** Newly added tag-like values take the spelling already used elsewhere. */
+function normalizeTagFields(kind, clean, orig) {
+  const inv = inventory(), notes = [];
+  for (const fd of kind.fields) {
+    if (fd.type !== 'list' || !Tags.TAG_FIELDS.includes(fd.key) || !Array.isArray(clean[fd.key])) continue;
+    const existing = new Set(Tags.asList(orig && orig[fd.key]));
+    const r = Tags.normalizeItems(clean[fd.key], inv[fd.key].canonical, existing);
+    clean[fd.key] = r.items;
+    r.changed.forEach(ch => notes.push({ field: fd.key, ...ch }));
+  }
+  return notes;
+}
+
 // ---------- git ----------
 const git = (args) => new Promise((resolve, reject) => {
   execFile('git', args, { cwd: REPO, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
@@ -289,6 +328,7 @@ app.post('/api/c/:coll', wrap(async (req, res) => {
   const kind = c.kinds[kindName];
   const { errs, clean } = validateFields(kind, req.body.values || {}, { create: true });
   if (errs.length) throw httpErr(400, errs.join(' '));
+  const normalized = normalizeTagFields(kind, clean, null);
 
   const entries = [];
   for (const fd of kind.fields) {
@@ -307,7 +347,7 @@ app.post('/api/c/:coll', wrap(async (req, res) => {
   const body = String(req.body.body || '').replace(/\r\n/g, '\n').trim();
   const text = FM.joinFile({ bom: false, eol: '\n', fm: FM.buildNew(entries, kind.order), rest: body ? `\n${body}\n` : '' });
   fs.writeFileSync(path.join(colDir(c), slug + '.md'), text, 'utf8');
-  res.status(201).json({ slug });
+  res.status(201).json({ slug, normalized });
 }));
 
 app.put('/api/c/:coll/:slug', wrap(async (req, res) => {
@@ -322,6 +362,7 @@ app.put('/api/c/:coll/:slug', wrap(async (req, res) => {
   const dflt = configDefaults(c);
   const { errs, clean } = validateFields(kind, req.body.values || {}, { create: false, orig: doc.data });
   if (errs.length) throw httpErr(400, errs.join(' '));
+  const normalized = normalizeTagFields(kind, clean, doc.data);
 
   // Only keys whose value actually changed are touched.
   const edits = [];
@@ -335,12 +376,12 @@ app.put('/api/c/:coll/:slug', wrap(async (req, res) => {
   const newBody = String(req.body.body != null ? req.body.body : doc.body).replace(/\r\n/g, '\n').trim();
   const bodyChanged = newBody !== doc.body;
 
-  if (!edits.length && !bodyChanged) return res.json({ slug: req.params.slug, unchanged: true, mtime: doc.mtime });
+  if (!edits.length && !bodyChanged) return res.json({ slug: req.params.slug, unchanged: true, mtime: doc.mtime, normalized });
 
   const blocks = FM.applyEdits(doc.blocks, edits, kind.order);
   const next = { ...doc.split, fm: FM.blocksToText(blocks), rest: bodyChanged ? (newBody ? `\n${newBody}\n` : '') : doc.split.rest };
   fs.writeFileSync(doc.file, FM.joinFile(next), 'utf8');
-  res.json({ slug: req.params.slug, changed: edits.map(e => e.key).concat(bodyChanged ? ['body'] : []), mtime: fs.statSync(doc.file).mtimeMs });
+  res.json({ slug: req.params.slug, changed: edits.map(e => e.key).concat(bodyChanged ? ['body'] : []), normalized, mtime: fs.statSync(doc.file).mtimeMs });
 }));
 
 // "Delete" moves to .studio-trash so a misclick is recoverable.
@@ -352,6 +393,27 @@ app.delete('/api/c/:coll/:slug', wrap(async (req, res) => {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   fs.renameSync(file, path.join(TRASH_DIR, `${stamp}__${c.dir.replace(/^_/, '')}__${path.basename(file)}`));
   res.json({ ok: true });
+}));
+
+// ---------- tags ----------
+app.get('/api/tags', wrap(async (req, res) => {
+  res.json({ fields: inventory(), fieldNames: Tags.TAG_FIELDS, claude: !!API_KEY });
+}));
+
+app.post('/api/tags/suggest', wrap(async (req, res) => {
+  const b = req.body || {};
+  const v = b.values || {};
+  const entry = {
+    title: v.title, summary: v.summary, topic: v.topic, body: String(b.body || ''),
+    current: v.tags,
+    lists: { tech_stack: v.tech_stack, tools: v.tools, genre: v.genre }
+  };
+  const inv = inventory();
+  if (b.mode === 'claude') {
+    res.json({ mode: 'claude', suggestions: await Tags.suggestClaude(entry, inv, { apiKey: API_KEY, model: TAG_MODEL }) });
+  } else {
+    res.json({ mode: 'local', suggestions: Tags.suggestLocal(entry, inv) });
+  }
 }));
 
 // ---------- markdown preview ----------
@@ -425,7 +487,7 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
 });
 
 if (require.main === module) {
-  app.listen(PORT, '127.0.0.1', () => {
+  app.listen(PORT, HOST, () => {
     console.log(`\n  ♠ Wonderland Studio is open at http://localhost:${PORT}`);
     console.log(`  ♦ Jekyll repo: ${REPO}${repoExists() ? '' : '  (NOT FOUND — set JEKYLL_REPO or config.json)'}\n`);
   });
