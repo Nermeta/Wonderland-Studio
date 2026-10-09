@@ -666,6 +666,8 @@
     lay.prepend(grid);
     if (isEmblemBadge()) { lay.appendChild(buildArt()); lay.appendChild(buildDisplayCase()); }
 
+    $('#af-out').innerHTML = ''; $('#af-claude').hidden = !state.claude;
+
     // body
     const hasBody = !(state.cur === 'emblems' && state.kind === 'education');
     $('#body-wrap').hidden = !hasBody;
@@ -951,6 +953,114 @@
   $('#form').addEventListener('submit', e => { e.preventDefault(); save(false); });
   $('#f-body').addEventListener('input', e => { state.body = e.target.value; refreshChrome(); if (state.pane === 'preview') schedulePreview(); });
   document.querySelectorAll('.pane-tab').forEach(b => b.addEventListener('click', () => setPane(b.dataset.pane)));
+
+  // ---------- writing: Markdown toolbar + focus mode ----------
+  const mdBar = $('#md-bar'), ta = $('#f-body');
+  function replaceRange(start, end, text, selA, selB) {
+    ta.focus(); ta.setSelectionRange(start, end);
+    // execCommand keeps the browser's undo history; fall back to a plain edit.
+    let ok = false; try { ok = document.execCommand('insertText', false, text); } catch { ok = false; }
+    if (!ok) { ta.setRangeText(text, start, end, 'end'); ta.dispatchEvent(new Event('input', { bubbles: true })); }
+    ta.setSelectionRange(selA, selB);
+  }
+  function wrapSel(before, after, placeholder) {
+    const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e) || placeholder;
+    if (ta.value.slice(s - before.length, s) === before && ta.value.slice(e, e + after.length) === after && s !== e) {
+      replaceRange(s - before.length, e + after.length, sel, s - before.length, s - before.length + sel.length); return; // toggle off
+    }
+    replaceRange(s, e, before + sel + after, s + before.length, s + before.length + sel.length);
+  }
+  function lineBlock() {
+    const v = ta.value; let s = ta.selectionStart, e = ta.selectionEnd;
+    s = v.lastIndexOf('\n', s - 1) + 1; const nl = v.indexOf('\n', e); e = nl === -1 ? v.length : nl;
+    return { s, e, lines: v.slice(s, e).split('\n') };
+  }
+  function prefixLines(make, test) {
+    const { s, e, lines } = lineBlock();
+    const all = lines.every(l => test(l));
+    const out = lines.map((l, i) => all ? l.replace(test.strip, '') : make(l.replace(test.strip, ''), i)).join('\n');
+    replaceRange(s, e, out, s, s + out.length);
+  }
+  const bullet = Object.assign(l => /^\s*[-*+]\s/.test(l), { strip: /^\s*[-*+]\s/ });
+  const numbered = Object.assign(l => /^\s*\d+\.\s/.test(l), { strip: /^\s*\d+\.\s/ });
+  const quote = Object.assign(l => /^>\s?/.test(l), { strip: /^>\s?/ });
+  const heading = n => Object.assign(l => l.startsWith('#'.repeat(n) + ' '), { strip: /^#{1,6}\s+/ });
+  const MD = [
+    ['B', 'Bold (Ctrl/Cmd+B)', () => wrapSel('**', '**', 'bold text'), 'b'],
+    ['I', 'Italic (Ctrl/Cmd+I)', () => wrapSel('*', '*', 'italic text'), 'i'],
+    ['H2', 'Heading 2', () => prefixLines(l => '## ' + l, heading(2))],
+    ['H3', 'Heading 3', () => prefixLines(l => '### ' + l, heading(3))],
+    ['•', 'Bulleted list', () => prefixLines(l => '- ' + l, bullet)],
+    ['1.', 'Numbered list', () => prefixLines((l, i) => `${i + 1}. ${l}`, numbered)],
+    ['❝', 'Quote', () => prefixLines(l => '> ' + l, quote)],
+    ['</>', 'Inline code', () => wrapSel('`', '`', 'code')],
+    ['{ }', 'Code block', () => { const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e) || 'code'; replaceRange(s, e, '```\n' + sel + '\n```', s + 4, s + 4 + sel.length); }],
+    ['🔗', 'Link (Ctrl/Cmd+K)', () => { const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e) || 'link text'; replaceRange(s, e, `[${sel}](url)`, s + sel.length + 3, s + sel.length + 6); }, 'k'],
+    ['▦', 'Table', () => { const s = ta.selectionStart; const t = '| Column | Column |\n| --- | --- |\n| Cell | Cell |\n'; replaceRange(s, ta.selectionEnd, t, s + 2, s + 8); }],
+    ['—', 'Divider', () => { const s = ta.selectionStart; replaceRange(s, ta.selectionEnd, '\n---\n', s + 5, s + 5); }]
+  ];
+  for (const [label, title, run] of MD) {
+    const b = el('button', 'md-btn', esc(label)); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title);
+    b.addEventListener('mousedown', e => e.preventDefault()); // keep the text selection
+    b.addEventListener('click', run);
+    mdBar.appendChild(b);
+  }
+  ta.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const hit = MD.find(m => m[3] && m[3] === e.key.toLowerCase());
+    if (hit && !e.shiftKey) { e.preventDefault(); hit[2](); }
+  });
+
+  const FOCUS_KEY = 'studio.focus';
+  function setFocus(on) {
+    $('#pane-edit').classList.toggle('focus', on);
+    const b = $('#btn-focus'); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '⤡ Show fields' : '⤢ Writing focus';
+    try { localStorage.setItem(FOCUS_KEY, on ? '1' : '0'); } catch { /* storage may be unavailable */ }
+  }
+  $('#btn-focus').addEventListener('click', () => setFocus(!$('#pane-edit').classList.contains('focus')));
+  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#btn-focus').click(); } });
+  try { if (localStorage.getItem(FOCUS_KEY) === '1') setFocus(true); } catch { /* ignore */ }
+
+  // ---------- auto-fill empty fields ----------
+  function applyValue(key, val) {
+    const w = document.querySelector(`[data-key="${key}"]`);
+    if (!w) return false;
+    if (Array.isArray(val)) { if (!w._add) return false; val.forEach(v => w._add(v)); return true; }
+    const inp = w.querySelector('textarea, input');
+    if (!inp) return false;
+    inp.value = val; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    const dd = w.querySelector('.dd'); if (dd) dd.hidden = true;
+    return true;
+  }
+  const labelOf = key => { const f = (state.schema.collections.find(c => c.id === state.cur) || {}).kinds; const k = f && (f[state.kind] || Object.values(f)[0]); const fd = k && k.fields.find(x => x.key === key); return fd ? fd.label : key; };
+  async function runAutofill(mode, btn) {
+    const out = $('#af-out'), label = btn.textContent;
+    btn.disabled = true; btn.textContent = mode === 'claude' ? 'Asking Claude…' : 'Working…'; out.innerHTML = '';
+    try {
+      const r = await api('/api/autofill', json('POST', { coll: state.cur, kind: state.kind, slug: state.slug, mode, values: state.values, body: state.body }));
+      if (!r.proposals.length) {
+        out.appendChild(el('p', 'hint', 'Nothing more to fill in with confidence.' + ((r.needsClaude || []).length ? ` ${r.needsClaude.map(labelOf).join(' and ')} needs Claude.` : '') + (mode === 'local' && state.claude ? ' Try “Auto-fill with Claude”.' : '')));
+        return;
+      }
+      const list = el('ul', 'af-list');
+      for (const p of r.proposals) {
+        const li = el('li');
+        const shown = Array.isArray(p.value) ? p.value.join(', ') : String(p.value);
+        li.innerHTML = `<b>${esc(labelOf(p.key))}</b><span class="af-val">${esc(shown)}</span><small>${esc(p.reason || '')}</small>`;
+        const use = el('button', 'btn-mini', 'Use'); use.type = 'button';
+        use.addEventListener('click', () => { if (applyValue(p.key, p.value)) { li.remove(); if (!list.children.length) out.innerHTML = ''; } else toast('That field is not on this form.', true); });
+        li.appendChild(use); list.appendChild(li);
+      }
+      const all = el('button', 'btn-mini', 'Use all'); all.type = 'button';
+      all.addEventListener('click', () => { r.proposals.forEach(p => applyValue(p.key, p.value)); out.innerHTML = ''; toast('Filled in. Review, then save.'); });
+      out.append(list, all);
+      if ((r.needsClaude || []).length) out.appendChild(el('p', 'hint', `${r.needsClaude.map(labelOf).join(' and ')} needs Claude to fill in.`));
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; btn.textContent = label; }
+  }
+  $('#af-local').addEventListener('click', e => runAutofill('local', e.currentTarget));
+  $('#af-claude').addEventListener('click', e => runAutofill('claude', e.currentTarget));
+
   $('#search').addEventListener('input', e => { state.search = e.target.value; renderList(); });
 
   $('#btn-new').addEventListener('click', () => { if (guard()) { openNew(); const t = document.querySelector('[data-key="title"] input'); if (t) t.focus(); } });

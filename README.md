@@ -38,6 +38,20 @@ Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` 
 - **✦ Suggest tags** (tags field): scores your existing tags against the entry's title, summary, topic and body, and also offers the entry's own tech stack/tools/genre values. Offline and private. Click a suggestion to add it; dashed ones are new to your vocabulary.
 - **Ask Claude** (optional): appears when an API key is set. It sends the entry's title, summary and body, plus your tag vocabulary, to the Claude API and returns up to 8 tags, reusing your spellings. Set `ANTHROPIC_API_KEY` in your environment (preferred), or `"anthropicApiKey"` in the git-ignored `config.json`. The model defaults to `claude-haiku-5-5`; override with `STUDIO_TAG_MODEL` or `"tagModel"`. It costs API usage per click.
 
+## Auto-fill and writing
+
+**✦ Auto-fill empty fields** (top of every form) proposes values for blank fields only, and you review each one before it is applied (**Use** or **Use all**). It works offline:
+- **Minutes to read:** about 200 words a minute, with code counted slower.
+- **Summary:** the opening paragraph, to edit.
+- **Topic, category, domain:** the most common value among entries that share your tags, otherwise a value already used that is named in the title or tags.
+- **Platform and difficulty (Field Notes):** from the title (`HTB:`, `THM:`) and the box info table.
+- **Subjects, tools, tags:** your existing values that the entry names, plus any of its tags that are in that vocabulary.
+- **Audience:** the most common one in the collection. **Subject (Chronicles):** the title without “Study Log”.
+
+**Auto-fill with Claude** (needs an API key) also fills what rules can't, such as Difficulty and Outcome. Difficulty and Outcome must be one of the field's allowed options. It sends the entry's title, tags and body to the Claude API.
+
+The body box has a Markdown toolbar (bold, italic, headings, lists, quote, code, link, table, divider; Ctrl/Cmd+B, I and K work too, and undo works). **Writing focus** (or Ctrl/Cmd+Shift+F) hides all the fields so only the body shows; it is remembered in your browser.
+
 ## Covers and ISBN lookup
 
 The site's deploy workflow downloads covers from Open Library and caches them, so a fresh clone often has no `assets/images/covers/` files. The Studio therefore shows the local file when there is one and otherwise loads the cover straight from Open Library in your browser (the ISBN is sent to openlibrary.org). **Look up ISBN** (Library form) searches Open Library with the title and author you typed. Pick a result to set the ISBN and fill in any empty author, page count, genre and topic. Genre and topic only use values you already have (plus fiction/nonfiction, inferred from Open Library's subjects), so a genre you have never used is not added automatically. Both need internet access.

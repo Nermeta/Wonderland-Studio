@@ -417,6 +417,23 @@ app.post('/api/tags/suggest', wrap(async (req, res) => {
   }
 }));
 
+// ---------- auto-fill empty fields ----------
+app.post('/api/autofill', wrap(async (req, res) => {
+  const b = req.body || {};
+  const c = byId(b.coll);
+  if (!c) throw Object.assign(new Error('Unknown collection.'), { status: 404 });
+  const kind = c.kinds[b.kind] || Object.values(c.kinds)[0];
+  const fields = kind.fields.filter(f => !f.hidden && !f.custom && ['text', 'combo', 'longtext', 'number', 'list'].includes(f.type));
+  const docs = listDocs(c).filter(i => !i.error).map(i => ({ ...readDoc(c, i.slug).data, __slug: i.slug }));
+  const AF = require('./lib/autofill');
+  const input = { collLabel: c.label, fields, values: b.values || {}, body: String(b.body || ''), docs, inventory: inventory(), titleSlug: b.slug || '' };
+  if (b.mode === 'claude') {
+    res.json({ mode: 'claude', proposals: await AF.claudeAutofill(input, { apiKey: API_KEY, model: TAG_MODEL }), needsClaude: [] });
+  } else {
+    res.json({ mode: 'local', ...AF.localAutofill(input) });
+  }
+}));
+
 // ---------- credential lookup (Claude + web search) ----------
 app.post('/api/credential/find', wrap(async (req, res) => {
   const b = req.body || {};

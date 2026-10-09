@@ -51,12 +51,22 @@
           <button type="button" class="pane-tab on" data-pane="edit">Edit</button>
           <button type="button" class="pane-tab" data-pane="preview" id="tab-preview">Preview</button>
           <span class="layout-note" id="layout-note"></span>
+          <button type="button" id="btn-focus" class="focus-btn" aria-pressed="false" title="Hide the fields above and write in the Markdown box (Ctrl/Cmd+Shift+F)">⤢ Writing focus</button>
         </div>
 
         <div id="pane-edit">
+          <div id="af" class="af">
+            <div class="af-bar">
+              <button type="button" id="af-local" class="btn-mini">✦ Auto-fill empty fields</button>
+              <button type="button" id="af-claude" class="btn-mini claude" hidden>Auto-fill with Claude</button>
+              <span class="hint" id="af-hint">Fills only blank fields. You review each value first.</span>
+            </div>
+            <div id="af-out" class="af-out"></div>
+          </div>
           <div id="layout" class="layout"></div>
           <div id="body-wrap" class="field body-field">
             <span id="body-label">Body <em>(Markdown)</em></span>
+            <div id="md-bar" class="md-bar" role="toolbar" aria-label="Markdown formatting"></div>
             <textarea id="f-body" rows="14" spellcheck="true" placeholder="Write in Markdown…"></textarea>
           </div>
           <div id="other" class="other" hidden></div>

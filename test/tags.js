@@ -109,3 +109,43 @@ assert.ok(s.length <= 8);
   await assert.rejects(() => findCredential({ title: 'x' }, { apiKey: '', model: 'm' }), /No Anthropic API key/);
   console.log('credential tests passed');
 })().catch(e => { console.error(e); process.exit(1); });
+
+// Auto-fill (local rules + mocked Claude)
+(async () => {
+  const AF = require('../lib/autofill');
+  const fields = [['topic', 'combo'], ['difficulty', 'combo', ['easy', 'medium', 'hard', 'insane']], ['platform', 'combo'], ['tools', 'list'], ['summary', 'longtext'], ['estimated_read', 'number'], ['audience', 'list'], ['tags', 'list'], ['category', 'combo']]
+    .map(([key, type, options]) => ({ key, type, options }));
+  const docs = [
+    { __slug: 'a', topic: 'cybersecurity', category: 'active-directory', tags: ['kerberos', 'windows'], tools: ['nmap'], audience: ['tech'] },
+    { __slug: 'b', topic: 'cybersecurity', category: 'active-directory', tags: ['kerberos'], tools: ['bloodhound'], audience: ['tech'] },
+    { __slug: 'c', topic: 'sysadmin', tags: ['powershell'], audience: ['tech'] }];
+  const inventory = T.buildInventory(docs.map(d => ({ coll: 'x', slug: d.__slug, title: d.__slug, data: d })));
+  const body = '## Box Info\n\n| | |\n|---|---|\n| Difficulty | Medium |\n\nThis walkthrough covers how nmap finds the open ports. Run nmap again with scripts, then compare the nmap output. ' + 'More words here. '.repeat(120);
+  const r = AF.localAutofill({ fields, values: { title: 'HTB: Escape', tags: ['kerberos'] }, body, docs, inventory, titleSlug: '' });
+  const got = Object.fromEntries(r.proposals.map(p => [p.key, p.value]));
+  assert.strictEqual(got.topic, 'cybersecurity', 'topic from entries sharing tags');
+  assert.strictEqual(got.category, 'active-directory');
+  assert.strictEqual(got.platform, 'HackTheBox');
+  assert.strictEqual(got.difficulty, 'medium', 'difficulty read from the info table');
+  assert.deepStrictEqual(got.tools, ['nmap']);
+  assert.deepStrictEqual(got.audience, ['tech']);
+  assert.ok(got.summary.startsWith('This walkthrough covers') && got.summary.length <= 260);
+  assert.ok(got.estimated_read >= 2 && got.estimated_read <= 3, 'reading time ~200 wpm: ' + got.estimated_read);
+  const filled = AF.localAutofill({ fields, values: { title: 'x', topic: 'mine', summary: 'mine' }, body, docs, inventory, titleSlug: '' });
+  assert.ok(!filled.proposals.some(p => p.key === 'topic' || p.key === 'summary'), 'never proposes for filled fields');
+  const bare = AF.localAutofill({ fields, values: { title: 'Notes' }, body: 'short', docs: [], inventory: T.buildInventory([]), titleSlug: '' });
+  assert.ok(bare.needsClaude.includes('difficulty'), 'says what needs Claude');
+  assert.strictEqual(AF.readingMinutes('too short'), null);
+
+  let sent;
+  const fake = async (u, o) => { sent = JSON.parse(o.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '{"fields":{"difficulty":"Hard","summary":"A deep look.","tools":["Nmap","brand-new"],"estimated_read":"7"},"reasons":{"difficulty":"uses advanced attacks"}}' }] }) }; };
+  const c = await AF.claudeAutofill({ collLabel: 'Field Notes', fields, values: { title: 't' }, body: 'b', docs, inventory }, { apiKey: 'k', model: 'm', fetchImpl: fake });
+  const cg = Object.fromEntries(c.map(p => [p.key, p.value]));
+  assert.ok(sent.messages[0].content.includes('easy | medium | hard | insane'), 'allowed options are in the prompt');
+  assert.strictEqual(cg.difficulty, 'hard');
+  assert.deepStrictEqual(cg.tools, ['nmap', 'brand-new'], 'reuses your spelling, kebab-cases new values');
+  assert.strictEqual(cg.estimated_read, 7);
+  const bad = async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '{"fields":{"difficulty":"impossible"}}' }] }) });
+  assert.deepStrictEqual(await AF.claudeAutofill({ collLabel: 'x', fields, values: {}, body: '', docs, inventory }, { apiKey: 'k', model: 'm', fetchImpl: bad }), [], 'values outside the allowed options are dropped');
+  console.log('autofill tests passed');
+})().catch(e => { console.error(e); process.exit(1); });

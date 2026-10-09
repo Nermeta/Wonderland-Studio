@@ -402,3 +402,26 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 .find-card a { color: var(--teal); word-break: break-all; font: 400 .85rem var(--mono); }
 .find-card small { color: var(--muted); }
 .find-card .btn-mini { justify-self: start; }
+
+/* Auto-fill panel */
+.af { margin-bottom: 1rem; }
+.af-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.af-out { margin-top: .6rem; display: grid; gap: .5rem; justify-items: start; }
+.af-out:empty { display: none; }
+.af-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; width: 100%; }
+.af-list li { display: grid; grid-template-columns: 9rem 1fr auto; gap: .2rem .8rem; align-items: baseline; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.02); }
+.af-list b { font: 600 .7rem var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--brass); }
+.af-val { font: 400 .9rem var(--body); color: var(--text); overflow-wrap: anywhere; }
+.af-list small { grid-column: 2; color: var(--muted); font: 300 .72rem var(--body); }
+.af-list .btn-mini { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
+@media (max-width: 640px) { .af-list li { grid-template-columns: 1fr auto; } .af-list b, .af-list small { grid-column: 1; } }
+
+/* Markdown toolbar + writing focus */
+.md-bar { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .4rem; }
+.md-btn { min-width: 2.1rem; padding: .3rem .5rem; background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 4px; color: var(--text); font: 600 .78rem var(--mono); cursor: pointer; }
+.md-btn:hover { border-color: var(--teal); color: var(--teal); }
+.focus-btn { margin-left: .8rem; background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); padding: .3rem .7rem; font: 600 .7rem var(--body); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.focus-btn:hover, .focus-btn[aria-pressed="true"] { color: var(--teal); border-color: var(--teal); }
+#pane-edit.focus #layout, #pane-edit.focus #af, #pane-edit.focus #other { display: none; }
+#pane-edit.focus #f-body { min-height: 62vh; }
+@media (max-width: 700px) { .focus-btn { margin-left: auto; } }
