@@ -33,7 +33,7 @@ for (const bad of [{ workerUrl: 'http://x.dev' }, { workerUrl: "https://x.dev/'"
 // desktop shortcut script: quoting survives spaces and apostrophes
 const { powershellScript } = require('../scripts/make-shortcut');
 const ps = powershellScript({ distro: 'Ubuntu-22.04', linuxPath: "/home/o'brien/My Studio" });
-assert.ok(ps.includes(`$s.Arguments = '/c wsl.exe -d "Ubuntu-22.04" --cd "/home/o''brien/My Studio" -e bash "/home/o''brien/My Studio/scripts/launch.sh" || pause'`), 'arguments are quoted for wsl.exe and PowerShell');
+assert.ok(ps.includes(`$s.Arguments = '/c wsl.exe -d Ubuntu-22.04 --cd "/home/o''brien/My Studio" -e bash "/home/o''brien/My Studio/scripts/launch.sh" || pause'`), 'arguments are quoted for wsl.exe and PowerShell');
 assert.ok(ps.includes("Join-Path (Join-Path $env:LOCALAPPDATA 'WonderlandStudio') 'studio.ico'") && ps.includes('$s.WindowStyle = 1'));
 
 const srv = app.listen(0, '127.0.0.1', async () => {

@@ -18,7 +18,8 @@ const psq = s => `'${String(s).replace(/'/g, "''")}'`; // PowerShell single-quot
 
 /** The PowerShell that creates the shortcut. Pure, so it can be tested. */
 function powershellScript({ distro, linuxPath }) {
-  const args = `/c wsl.exe -d "${distro}" --cd "${linuxPath}" -e bash "${linuxPath}/scripts/launch.sh" || pause`;
+  const q = x => (/[\s"]/.test(x) ? `"${x}"` : x); // quote only when needed; cmd mangles needless quotes
+  const args = `/c wsl.exe -d ${q(distro)} --cd ${q(linuxPath)} -e bash ${q(linuxPath + '/scripts/launch.sh')} || pause`;
   return [
     "$ErrorActionPreference = 'Stop'",
     "$icon = Join-Path (Join-Path $env:LOCALAPPDATA 'WonderlandStudio') 'studio.ico'",
