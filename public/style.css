@@ -425,3 +425,12 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 #pane-edit.focus #layout, #pane-edit.focus #af, #pane-edit.focus #other { display: none; }
 #pane-edit.focus #f-body { min-height: 62vh; }
 @media (max-width: 700px) { .focus-btn { margin-left: auto; } }
+
+/* Themed scrollbars (page, lists, dropdowns, text areas) */
+:root { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: var(--brass-lo) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: rgba(5, 7, 15, .6); }
+*::-webkit-scrollbar-thumb { background: var(--brass-lo); border-radius: 6px; border: 2px solid rgba(5, 7, 15, .6); }
+*::-webkit-scrollbar-thumb:hover { background: var(--brass); }
+*::-webkit-scrollbar-corner { background: transparent; }
