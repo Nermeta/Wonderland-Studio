@@ -789,7 +789,7 @@
   async function refreshPreview() {
     let html = '';
     try { html = (await api('/api/render', json('POST', { markdown: state.body }))).html; }
-    catch (e) { html = `<p>${esc(e.message)}</p>`; }
+    catch (e) { html = `<p>${/failed to fetch/i.test(e.message) ? 'The Studio has stopped, so the preview cannot be drawn. Start it again from your desktop icon.' : esc(e.message)}</p>`; }
     $('#preview-frame').srcdoc = previewDoc(state.values, html);
   }
 
@@ -1016,6 +1016,7 @@
     ['</>', 'Inline code', () => wrapSel('`', '`', 'code')],
     ['{ }', 'Code block', () => { const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e) || 'code'; replaceRange(s, e, '```\n' + sel + '\n```', s + 4, s + 4 + sel.length); }],
     ['🔗', 'Link (Ctrl/Cmd+K)', () => { const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e) || 'link text'; replaceRange(s, e, `[${sel}](url)`, s + sel.length + 3, s + sel.length + 6); }, 'k'],
+    ['⛓', 'Link to another page on the site', () => openLinkPicker()],
     ['▦', 'Table', () => { const s = ta.selectionStart; const t = '| Column | Column |\n| --- | --- |\n| Cell | Cell |\n'; replaceRange(s, ta.selectionEnd, t, s + 2, s + 8); }],
     ['—', 'Divider', () => { const s = ta.selectionStart; replaceRange(s, ta.selectionEnd, '\n---\n', s + 5, s + 5); }]
   ];
@@ -1025,6 +1026,51 @@
     b.addEventListener('click', run);
     mdBar.appendChild(b);
   }
+
+  // ---------- link to another page on the site ----------
+  let linkGroups = null, linkPanel = null;
+  function closeLinkPicker() { if (linkPanel) { linkPanel.remove(); linkPanel = null; } }
+  async function openLinkPicker() {
+    if (linkPanel) { closeLinkPicker(); return; }
+    const selStart = ta.selectionStart, selEnd = ta.selectionEnd, picked = ta.value.slice(selStart, selEnd);
+    const panel = el('div', 'link-picker');
+    panel.innerHTML = '<input type="search" class="search" placeholder="Find a page to link to…" aria-label="Find a page"><div class="lp-list" role="listbox"></div><p class="small muted lp-note"></p>';
+    $('#body-wrap').appendChild(panel); linkPanel = panel;
+    const q = panel.querySelector('input'), list = panel.querySelector('.lp-list'), note = panel.querySelector('.lp-note');
+    q.focus();
+    try { if (!linkGroups) linkGroups = (await api('/api/linkables')).groups; }
+    catch (e) { list.innerHTML = ''; note.textContent = 'Could not load the page list: ' + e.message; return; }
+    const pick = it => {
+      closeLinkPicker();
+      const text = picked || it.title, md = `[${text}](${it.url})`;
+      replaceRange(selStart, selEnd, md, selStart + md.length, selStart + md.length);
+      ta.focus();
+    };
+    const paint = () => {
+      const t = q.value.trim().toLowerCase();
+      list.innerHTML = '';
+      let first = null, n = 0;
+      for (const g of linkGroups) {
+        const hits = g.items.filter(i => !t || i.title.toLowerCase().includes(t) || i.url.toLowerCase().includes(t));
+        if (!hits.length) continue;
+        list.appendChild(el('div', 'lp-group', esc(g.label)));
+        for (const it of hits.slice(0, 40)) {
+          const row = el('button', 'lp-item', `<span>${esc(it.title)}</span><code>${esc(it.url)}</code>`);
+          row.type = 'button'; row.addEventListener('click', () => pick(it));
+          list.appendChild(row); first = first || it; n++;
+        }
+      }
+      note.textContent = n ? (picked ? `Will turn “${picked.length > 30 ? picked.slice(0, 30) + '…' : picked}” into a link.` : 'Inserts a link with the page title as its text.') : 'No matching pages.';
+      q._first = first;
+    };
+    q.addEventListener('input', paint);
+    q.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.preventDefault(); closeLinkPicker(); ta.focus(); }
+      if (e.key === 'Enter') { e.preventDefault(); if (q._first) pick(q._first); }
+    });
+    paint();
+  }
+  document.addEventListener('mousedown', e => { if (linkPanel && !linkPanel.contains(e.target) && !e.target.closest('.md-bar')) closeLinkPicker(); });
   ta.addEventListener('keydown', e => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const hit = MD.find(m => m[3] && m[3] === e.key.toLowerCase());

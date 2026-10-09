@@ -76,7 +76,7 @@ Forms come from per-collection schemas (`lib/schemas.js`) and show the `layout` 
 
 **Auto-fill with Claude** (needs an API key) also fills what rules can't, such as Difficulty and Outcome. Difficulty and Outcome must be one of the field's allowed options. It sends the entry's title, tags and body to the Claude API.
 
-The body box has a Markdown toolbar (bold, italic, headings, lists, quote, code, link, table, divider; Ctrl/Cmd+B, I and K work too, and undo works). **Writing focus** (or Ctrl/Cmd+Shift+F) hides all the fields so only the body shows; it is remembered in your browser.
+The body box has a Markdown toolbar (bold, italic, headings, lists, quote, code, link, table, divider; Ctrl/Cmd+B, I and K work too, and undo works). The **⛓** button links to another page on the site: search your pages and entries, pick one, and it inserts `[text](/section/page/)` (it wraps the text you selected, or uses the page's title). Entries without a page of their own (Emblems) are not listed. **Writing focus** (or Ctrl/Cmd+Shift+F) hides all the fields so only the body shows; it is remembered in your browser.
 
 ## Covers and ISBN lookup
 

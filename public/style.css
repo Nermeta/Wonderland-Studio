@@ -531,3 +531,13 @@ a.btn-mini { text-decoration: none; display: inline-block; }
 @media (max-width: 1000px) {
   .quit-chip span:not(.git-glyph), #site-chip > span:nth-child(2) { display: none; }
 }
+
+/* link picker */
+.body-field { position: relative; }
+.link-picker { position: absolute; z-index: 30; left: 0; top: 3.1rem; width: min(30rem, 100%); padding: .6rem; background: var(--navy-2); border: 1px solid var(--brass-lo); border-radius: 8px; box-shadow: 0 14px 30px rgba(0,0,0,.55); }
+.lp-list { max-height: 15rem; overflow: auto; margin: .5rem 0 .3rem; }
+.lp-group { margin: .5rem 0 .2rem; font: 600 .68rem var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--brass); }
+.lp-item { display: flex; justify-content: space-between; gap: .8rem; width: 100%; padding: .4rem .5rem; background: none; border: 0; border-radius: 4px; color: var(--text); font: 400 .85rem var(--body); text-align: left; cursor: pointer; }
+.lp-item:hover, .lp-item:focus { background: rgba(0,229,204,.12); outline: none; }
+.lp-item code { color: var(--muted); font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.lp-note { margin: 0; }

@@ -512,6 +512,12 @@ app.get('/api/isbn', wrap(async (req, res) => {
   res.json({ results: await require('./lib/isbn').lookupIsbn({ title: req.query.title, author: req.query.author, genres: String(req.query.genres || '').split('|').filter(Boolean), topics: String(req.query.topics || '').split('|').filter(Boolean) }) });
 }));
 
+// ---------- pages a link can point to ----------
+app.get('/api/linkables', wrap(async (req, res) => {
+  needRepo();
+  res.json({ groups: require('./lib/links').listLinkables(REPO, COLLECTIONS, c => listDocs(c)) });
+}));
+
 // ---------- markdown preview ----------
 app.post('/api/render', (req, res) => {
   const md = String(req.body.markdown || '').slice(0, 500000);

@@ -60,3 +60,24 @@ const srv = app.listen(0, '127.0.0.1', async () => {
   } catch (e) { console.error(e); process.exitCode = 1; }
   srv.close(); fs.rmSync(tmp, { recursive: true, force: true }); process.exit(process.exitCode || 0);
 });
+
+// ---- links to other pages ----
+{
+  const L = require('../lib/links');
+  assert.strictEqual(L.slugify('2026-03-15-Setting_up a Home Lab'), '2026-03-15-setting-up-a-home-lab');
+  assert.strictEqual(L.collectionUrl('/tutorials/:name/', 'tutorials', '2026-03-15-setting-up-a-home-lab'), '/tutorials/setting-up-a-home-lab/');
+  assert.strictEqual(L.collectionUrl('/writeups/:name/', 'writeups', '10-06-2026-example-writeup'), '/writeups/10-06-2026-example-writeup/');
+  assert.strictEqual(L.collectionUrl('/deep-dives/:name/', 'deep-dives', 'Zero Trust'), '/deep-dives/zero-trust/');
+  assert.strictEqual(L.collectionUrl(undefined, 'writeups', 'x'), '/writeups/x/');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'lk-'));
+  fs.mkdirSync(path.join(d, '_pages'));
+  fs.writeFileSync(path.join(d, '_config.yml'), 'collections:\n  writeups:\n    output: true\n    permalink: /writeups/:name/\n  certifications:\n    output: false\n');
+  fs.writeFileSync(path.join(d, 'index.markdown'), '---\ntitle: Home page\n---\n');
+  fs.writeFileSync(path.join(d, '_pages', 'about.markdown'), '---\ntitle: About\npermalink: /about-me/\n---\n');
+  fs.writeFileSync(path.join(d, '_pages', 'resume.md'), '---\ntitle: Resume\n---\n');
+  const g = L.listLinkables(d, [{ id: 'field-notes', label: 'Field Notes', config: 'writeups' }, { id: 'emblems', label: 'Emblems', config: 'certifications' }], () => [{ slug: 'Box One', title: 'Box One' }, { slug: 'bad', error: 'x' }]);
+  assert.deepStrictEqual(g.map(x => x.id), ['pages', 'field-notes'], 'collections without output have no page to link to');
+  assert.deepStrictEqual(g[0].items.map(i => i.url), ['/', '/about-me/', '/resume/']);
+  assert.deepStrictEqual(g[1].items, [{ title: 'Box One', url: '/writeups/box-one/' }]);
+  console.log('link tests passed');
+}
