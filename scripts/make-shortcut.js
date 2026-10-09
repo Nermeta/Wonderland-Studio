@@ -18,7 +18,7 @@ const psq = s => `'${String(s).replace(/'/g, "''")}'`; // PowerShell single-quot
 
 /** The PowerShell that creates the shortcut. Pure, so it can be tested. */
 function powershellScript({ distro, linuxPath }) {
-  const args = `-d "${distro}" --cd "${linuxPath}" -e bash "${linuxPath}/scripts/launch.sh"`;
+  const args = `/c wsl.exe -d "${distro}" --cd "${linuxPath}" -e bash "${linuxPath}/scripts/launch.sh" || pause`;
   return [
     "$ErrorActionPreference = 'Stop'",
     "$icon = Join-Path (Join-Path $env:LOCALAPPDATA 'WonderlandStudio') 'studio.ico'",
@@ -26,7 +26,7 @@ function powershellScript({ distro, linuxPath }) {
     `$lnk = Join-Path $desktop ${psq(NAME + '.lnk')}`,
     '$ws = New-Object -ComObject WScript.Shell',
     '$s = $ws.CreateShortcut($lnk)',
-    "$s.TargetPath = Join-Path $env:SystemRoot 'System32\\wsl.exe'",
+    "$s.TargetPath = Join-Path $env:SystemRoot 'System32\\cmd.exe'",
     `$s.Arguments = ${psq(args)}`,
     '$s.WorkingDirectory = $env:USERPROFILE',
     '$s.IconLocation = "$icon,0"',
